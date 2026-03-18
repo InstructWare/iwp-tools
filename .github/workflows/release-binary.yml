@@ -81,11 +81,30 @@ jobs:
           fi
           echo "Release assets to publish:"
           printf '%s\n' "${files[@]}"
+      - name: Bundle archives by platform
+        run: |
+          set -euo pipefail
+          mkdir -p packaged bundle
+
+          for os in Linux macOS Windows; do
+            mkdir -p "bundle/${os}"
+            shopt -s nullglob
+            files=(release-binaries/iwp-lint-${os}* release-binaries/iwp-build-${os}*)
+            if [ "${#files[@]}" -eq 0 ]; then
+              echo "No binaries found for ${os}" >&2
+              exit 1
+            fi
+            cp "${files[@]}" "bundle/${os}/"
+            (cd "bundle/${os}" && zip -r "../../packaged/instructware-tools-${os}.zip" .)
+          done
+
+          echo "Packaged archives:"
+          ls -l packaged
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          files: release-binaries/*
+          files: packaged/*.zip
           fail_on_unmatched_files: true
           generate_release_notes: true
