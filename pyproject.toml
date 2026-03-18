@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling>=1.27.0"]
+requires =["hatchling>=1.27.0", "hatch-vcs"] 
 build-backend = "hatchling.build"
 
 [project]
 name = "instructware-tools"
-version = "0.1.0"
+dynamic = ["version"] 
 description = "CLI tools for InstructWare protocol linting and incremental build workflows."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -64,3 +64,6 @@ ignore = ["E501"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.hatch.version]
+source = "vcs"
