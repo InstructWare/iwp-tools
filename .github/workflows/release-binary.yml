@@ -6,6 +6,9 @@ on:
       - "v*"
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -44,13 +47,45 @@ jobs:
       - name: Sync dependencies
         run: uv sync --group dev
       - name: Build iwp-lint binary
-        run: uv run pyinstaller --onefile --name iwp-lint iwp_lint/__main__.py
+        run: uv run pyinstaller --onefile --name iwp-lint-${{ runner.os }} iwp_lint/__main__.py
       - name: Build iwp-build binary
-        run: uv run pyinstaller --onefile --name iwp-build iwp_build/__main__.py
+        run: uv run pyinstaller --onefile --name iwp-build-${{ runner.os }} iwp_build/__main__.py
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.os }}
           path: |
-            dist/iwp-lint*
-            dist/iwp-build*
+            dist/iwp-lint-*
+            dist/iwp-build-*
+
+  release:
+    needs: build-binaries
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          path: release-binaries
+          merge-multiple: true
+      - name: Verify release assets
+        run: |
+          shopt -s nullglob
+          files=(release-binaries/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No release assets found under release-binaries/" >&2
+            exit 1
+          fi
+          echo "Release assets to publish:"
+          printf '%s\n' "${files[@]}"
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: release-binaries/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
