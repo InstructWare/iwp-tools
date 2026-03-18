@@ -1,0 +1,573 @@
+{
+  "schema_name": "IWP Semantic Schema",
+  "schema_version": "2.0.0",
+  "status": "draft",
+  "description": "Machine-readable minimal schema for IWP markdown file types.",
+  "modes": {
+    "default": "compat",
+    "supported": [
+      "compat",
+      "strict"
+    ]
+  },
+  "global_rules": {
+    "h1_required_exactly_one": true,
+    "h2_unknown_policy": {
+      "compat": "warn",
+      "strict": "error"
+    }
+  },
+  "kind_rules": {
+    "format": "{file_type_id}.{section_key}"
+  },
+  "section_i18n": {
+    "layout_tree": {
+      "en": [
+        "Layout Tree"
+      ],
+      "zh-CN": [
+        "布局树"
+      ]
+    },
+    "interaction_hooks": {
+      "en": [
+        "Interaction Hooks"
+      ],
+      "zh-CN": [
+        "交互钩子"
+      ]
+    },
+    "display_rules": {
+      "en": [
+        "Display Rules"
+      ],
+      "zh-CN": [
+        "展示规则"
+      ]
+    },
+    "layout": {
+      "en": [
+        "Layout"
+      ],
+      "zh-CN": [
+        "布局"
+      ]
+    },
+    "trigger": {
+      "en": [
+        "Trigger"
+      ],
+      "zh-CN": [
+        "触发条件"
+      ]
+    },
+    "execution_flow": {
+      "en": [
+        "Execution Flow"
+      ],
+      "zh-CN": [
+        "执行流程"
+      ]
+    },
+    "input": {
+      "en": [
+        "Input"
+      ],
+      "zh-CN": [
+        "输入"
+      ]
+    },
+    "guard_rules": {
+      "en": [
+        "Guard Rules"
+      ],
+      "zh-CN": [
+        "守卫规则"
+      ]
+    },
+    "post_redirect_rules": {
+      "en": [
+        "Post-Redirect Rules"
+      ],
+      "zh-CN": [
+        "重定向后规则"
+      ]
+    },
+    "fields": {
+      "en": [
+        "Fields"
+      ],
+      "zh-CN": [
+        "字段"
+      ]
+    },
+    "initialization_rules": {
+      "en": [
+        "Initialization Rules"
+      ],
+      "zh-CN": [
+        "初始化规则"
+      ]
+    },
+    "derivation_rules": {
+      "en": [
+        "Derivation Rules"
+      ],
+      "zh-CN": [
+        "派生规则"
+      ]
+    },
+    "update_rules": {
+      "en": [
+        "Update Rules"
+      ],
+      "zh-CN": [
+        "更新规则"
+      ]
+    },
+    "runtime_guarantees": {
+      "en": [
+        "Runtime Guarantees"
+      ],
+      "zh-CN": [
+        "运行时保障"
+      ]
+    },
+    "entity": {
+      "en": [
+        "Entity"
+      ],
+      "zh-CN": [
+        "实体"
+      ]
+    },
+    "seed_data": {
+      "en": [
+        "Seed Data"
+      ],
+      "zh-CN": [
+        "种子数据"
+      ]
+    },
+    "purpose": {
+      "en": [
+        "Purpose"
+      ],
+      "zh-CN": [
+        "目的"
+      ]
+    },
+    "canonical_extraction_rules": {
+      "en": [
+        "Canonical Extraction Rules"
+      ],
+      "zh-CN": [
+        "规范抽取规则"
+      ]
+    },
+    "derived_toc_rules": {
+      "en": [
+        "Derived TOC Rules"
+      ],
+      "zh-CN": [
+        "目录派生规则"
+      ]
+    },
+    "scenario": {
+      "en": [
+        "Scenario"
+      ],
+      "zh-CN": [
+        "场景"
+      ]
+    },
+    "navigation": {
+      "en": [
+        "Navigation"
+      ],
+      "zh-CN": [
+        "导航"
+      ]
+    },
+    "common_actions": {
+      "en": [
+        "Common Actions"
+      ],
+      "zh-CN": [
+        "常用操作"
+      ]
+    },
+    "docs": {
+      "en": [
+        "Docs"
+      ],
+      "zh-CN": [
+        "文档"
+      ]
+    },
+    "home": {
+      "en": [
+        "Home"
+      ],
+      "zh-CN": [
+        "首页"
+      ]
+    },
+    "brand_intent": {
+      "en": [
+        "Brand Intent"
+      ],
+      "zh-CN": [
+        "品牌意图"
+      ]
+    },
+    "theme_tokens": {
+      "en": [
+        "Theme Tokens"
+      ],
+      "zh-CN": [
+        "主题令牌"
+      ]
+    },
+    "typography": {
+      "en": [
+        "Typography"
+      ],
+      "zh-CN": [
+        "排版"
+      ]
+    },
+    "layout_rules": {
+      "en": [
+        "Layout Rules"
+      ],
+      "zh-CN": [
+        "布局规则"
+      ]
+    },
+    "spacing_scale": {
+      "en": [
+        "Spacing Scale"
+      ],
+      "zh-CN": [
+        "间距尺度"
+      ]
+    },
+    "product_identity": {
+      "en": [
+        "Product Identity"
+      ],
+      "zh-CN": [
+        "产品标识"
+      ]
+    },
+    "global_rules": {
+      "en": [
+        "Global Rules"
+      ],
+      "zh-CN": [
+        "全局规则"
+      ]
+    },
+    "information_architecture": {
+      "en": [
+        "Information Architecture"
+      ],
+      "zh-CN": [
+        "信息架构"
+      ]
+    },
+    "architecture_scope": {
+      "en": [
+        "Architecture Scope"
+      ],
+      "zh-CN": [
+        "架构范围"
+      ]
+    },
+    "state_management": {
+      "en": [
+        "State Management"
+      ],
+      "zh-CN": [
+        "状态管理"
+      ]
+    },
+    "rendering_strategy": {
+      "en": [
+        "Rendering Strategy"
+      ],
+      "zh-CN": [
+        "渲染策略"
+      ]
+    },
+    "event_orchestration": {
+      "en": [
+        "Event Orchestration"
+      ],
+      "zh-CN": [
+        "事件编排"
+      ]
+    },
+    "boundary_rules": {
+      "en": [
+        "Boundary Rules"
+      ],
+      "zh-CN": [
+        "边界规则"
+      ]
+    }
+  },
+  "file_type_schemas": [
+    {
+      "id": "views.pages",
+      "path_patterns": [
+        "views/pages/**/*.md",
+        "views/pages/*.md"
+      ],
+      "sections": [
+        {
+          "key": "layout_tree",
+          "required": true
+        },
+        {
+          "key": "interaction_hooks",
+          "required": true
+        },
+        {
+          "key": "display_rules",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "views.components",
+      "path_patterns": [
+        "views/components/**/*.md",
+        "views/components/*.md"
+      ],
+      "sections": [
+        {
+          "key": "layout",
+          "required": true
+        },
+        {
+          "key": "interaction_hooks",
+          "required": true
+        },
+        {
+          "key": "display_rules",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "logic",
+      "path_patterns": [
+        "logic/**/*.md"
+      ],
+      "sections": [
+        {
+          "key": "trigger",
+          "required": true
+        },
+        {
+          "key": "execution_flow",
+          "required": false
+        },
+        {
+          "key": "input",
+          "required": false
+        },
+        {
+          "key": "guard_rules",
+          "required": false
+        },
+        {
+          "key": "post_redirect_rules",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "state",
+      "path_patterns": [
+        "state/*.md"
+      ],
+      "sections": [
+        {
+          "key": "fields",
+          "required": true
+        },
+        {
+          "key": "initialization_rules",
+          "required": false
+        },
+        {
+          "key": "derivation_rules",
+          "required": false
+        },
+        {
+          "key": "update_rules",
+          "required": false
+        },
+        {
+          "key": "runtime_guarantees",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "models",
+      "path_patterns": [
+        "models/**/*.md"
+      ],
+      "sections": [
+        {
+          "key": "entity",
+          "required": true
+        },
+        {
+          "key": "seed_data",
+          "required": false
+        },
+        {
+          "key": "purpose",
+          "required": false
+        },
+        {
+          "key": "canonical_extraction_rules",
+          "required": false
+        },
+        {
+          "key": "derived_toc_rules",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "tests",
+      "path_patterns": [
+        "tests/**/*.md"
+      ],
+      "sections": [
+        {
+          "key": "scenario",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "locales",
+      "path_patterns": [
+        "locales/*.md"
+      ],
+      "sections": [
+        {
+          "key": "navigation",
+          "required": false
+        },
+        {
+          "key": "common_actions",
+          "required": false
+        },
+        {
+          "key": "docs",
+          "required": false
+        },
+        {
+          "key": "home",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "styles",
+      "path_patterns": [
+        "styles/*.md"
+      ],
+      "sections": [
+        {
+          "key": "brand_intent",
+          "required": false
+        },
+        {
+          "key": "theme_tokens",
+          "required": false
+        },
+        {
+          "key": "typography",
+          "required": false
+        },
+        {
+          "key": "layout_rules",
+          "required": false
+        },
+        {
+          "key": "spacing_scale",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "system",
+      "path_patterns": [
+        "system.md"
+      ],
+      "sections": [
+        {
+          "key": "product_identity",
+          "required": true
+        },
+        {
+          "key": "global_rules",
+          "required": true
+        },
+        {
+          "key": "information_architecture",
+          "required": true
+        },
+        {
+          "key": "runtime_guarantees",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "architecture",
+      "path_patterns": [
+        "architecture.md"
+      ],
+      "sections": [
+        {
+          "key": "architecture_scope",
+          "required": true
+        },
+        {
+          "key": "state_management",
+          "required": true
+        },
+        {
+          "key": "rendering_strategy",
+          "required": true
+        },
+        {
+          "key": "event_orchestration",
+          "required": true
+        },
+        {
+          "key": "boundary_rules",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "linter_error_contract": {
+    "IWP201": "missing required section",
+    "IWP202": "illegal section for file type",
+    "IWP203": "invalid section cardinality",
+    "IWP204": "invalid section structure",
+    "IWP205": "invalid scenario grammar"
+  }
+}
+

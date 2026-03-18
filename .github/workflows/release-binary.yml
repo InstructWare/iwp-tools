@@ -1,0 +1,56 @@
+name: release-binary
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v4
+      - name: Sync dependencies
+        run: uv sync --group dev
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Ruff format check
+        run: uv run ruff format --check .
+      - name: Pyright
+        run: uv run pyright iwp_lint iwp_build test
+      - name: Regression tests
+        run: uv run python -m unittest iwp_lint.tests.test_regression
+
+  build-binaries:
+    needs: quality
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v4
+      - name: Sync dependencies
+        run: uv sync --group dev
+      - name: Build iwp-lint binary
+        run: uv run pyinstaller --onefile --name iwp-lint iwp_lint/__main__.py
+      - name: Build iwp-build binary
+        run: uv run pyinstaller --onefile --name iwp-build iwp_build/__main__.py
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.os }}
+          path: |
+            dist/iwp-lint*
+            dist/iwp-build*

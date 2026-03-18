@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "instructware-tools"
+version = "0.1.0"
+description = "CLI tools for InstructWare protocol linting and incremental build workflows."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "InstructWare Maintainers" },
+]
+dependencies = [
+  "PyYAML>=6.0.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/InstructWare/iwp-tools"
+Repository = "https://github.com/InstructWare/iwp-tools"
+Issues = "https://github.com/InstructWare/iwp-tools/issues"
+
+[project.scripts]
+iwp-lint = "iwp_lint.cli:main"
+iwp-build = "iwp_build.cli:main"
+
+[dependency-groups]
+dev = [
+  "build>=1.2.2",
+  "pre-commit>=4.0.1",
+  "pyinstaller>=6.11.1",
+  "pyright>=1.1.390",
+  "ruff>=0.8.4",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["iwp_lint", "iwp_build"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "iwp_lint",
+  "iwp_build",
+  "iwp_lint/_bundled_schema/iwp-schema.v1.json",
+  "schema",
+  "test",
+  "README.md",
+  "LICENSE",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [
+  ".git",
+  ".iwp",
+  "__pycache__",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
