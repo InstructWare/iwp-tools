@@ -86,7 +86,9 @@ def _normalize_file_lines(
         while idx < len(lines) and _is_link_only_line(lines[idx]):
             block_lines.append(lines[idx])
             idx += 1
-        normalized_lines, block_stale, block_duplicate = _normalize_link_block(block_lines, node_keys)
+        normalized_lines, block_stale, block_duplicate = _normalize_link_block(
+            block_lines, node_keys
+        )
         stale_count += block_stale
         duplicate_count += block_duplicate
         if len(block_lines) > 1:

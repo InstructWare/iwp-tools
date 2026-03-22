@@ -232,7 +232,9 @@ def build_short_node_ids_by_source(
     min_len = max(1, int(min_length))
 
     for source_path, stable_keys in stable_keys_by_source.items():
-        reserved_ids = reserved_ids_by_source.get(source_path, set()) if reserved_ids_by_source else set()
+        reserved_ids = (
+            reserved_ids_by_source.get(source_path, set()) if reserved_ids_by_source else set()
+        )
         unique_keys = sorted(set(stable_keys))
         hashed_values = {key: sha1(key.encode("utf-8")).hexdigest() for key in unique_keys}
         for key in unique_keys:

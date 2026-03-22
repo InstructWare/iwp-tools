@@ -86,7 +86,7 @@ def render_iwp_reconcile_text(
         changed_code = safe_int(summary.get("changed_code_count", 0))
         impacted = safe_int(summary.get("impacted_nodes_count", 0))
         lines.append(
-            f'diff_summary:{quoted(f"changed_md={changed_md} changed_code={changed_code} impacted_nodes={impacted}")}'
+            f"diff_summary:{quoted(f'changed_md={changed_md} changed_code={changed_code} impacted_nodes={impacted}')}"
         )
         warning_count = safe_int(summary.get("warning_count", 0))
         lines.append(f"warning_count:{warning_count}")
@@ -200,7 +200,7 @@ def escape_text(value: object) -> str:
 
 
 def quoted(value: object) -> str:
-    return f"\"{escape_text(value)}\""
+    return f'"{escape_text(value)}"'
 
 
 def string_or_empty(value: object) -> str:

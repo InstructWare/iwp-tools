@@ -181,9 +181,7 @@ class IwpBuildCommitTests(unittest.TestCase):
             )
             _write(
                 link_file,
-                "\n".join(
-                    f"// @iwp.link architecture.md::{node.node_id}" for node in new_nodes
-                )
+                "\n".join(f"// @iwp.link architecture.md::{node.node_id}" for node in new_nodes)
                 + "\n",
             )
 

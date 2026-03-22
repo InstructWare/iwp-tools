@@ -231,8 +231,7 @@ def _validate_text_marker_usage(
                 Diagnostic(
                     code="IWP204",
                     message=(
-                        "`[text]` marker is not allowed in this section: "
-                        f"{current_section_key}"
+                        f"`[text]` marker is not allowed in this section: {current_section_key}"
                     ),
                     file_path=rel_path,
                     line=line_no,

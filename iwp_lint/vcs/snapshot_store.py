@@ -82,9 +82,7 @@ class SnapshotStore:
                     )
                     """
                 )
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)"
-                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)")
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id)"
                 )

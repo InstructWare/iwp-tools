@@ -175,7 +175,9 @@ def resolve_session_options(args: argparse.Namespace, *, config: Any) -> Session
         preset_opts.get("format"),
         fallback="text",
     )
-    config_auto_start = bool(getattr(getattr(config, "session", None), "auto_start_on_missing", False))
+    config_auto_start = bool(
+        getattr(getattr(config, "session", None), "auto_start_on_missing", False)
+    )
     auto_start_session = (
         bool(getattr(args, "auto_start_session", False))
         or bool(preset_opts.get("auto_start_session", False))
@@ -236,7 +238,8 @@ def resolve_session_options(args: argparse.Namespace, *, config: Any) -> Session
             fallback=None,
         ),
         output_format=str(output_format),
-        debug_raw=bool(getattr(args, "debug_raw", False)) or bool(preset_opts.get("debug_raw", False)),
+        debug_raw=bool(getattr(args, "debug_raw", False))
+        or bool(preset_opts.get("debug_raw", False)),
         auto_start_session=auto_start_session,
         include_baseline_gaps=bool(getattr(args, "include_baseline_gaps", False))
         or bool(preset_opts.get("include_baseline_gaps", False)),
@@ -267,7 +270,8 @@ def resolve_session_options(args: argparse.Namespace, *, config: Any) -> Session
         allow_stale_sidecar=bool(getattr(args, "allow_stale_sidecar", False))
         or bool(preset_opts.get("allow_stale_sidecar", False)),
         warning_top_n=warning_top_n,
-        if_missing=bool(getattr(args, "if_missing", False)) or bool(preset_opts.get("if_missing", False)),
+        if_missing=bool(getattr(args, "if_missing", False))
+        or bool(preset_opts.get("if_missing", False)),
         auto_build_sidecar=bool(getattr(args, "auto_build_sidecar", False))
         or bool(preset_opts.get("auto_build_sidecar", False)),
     )

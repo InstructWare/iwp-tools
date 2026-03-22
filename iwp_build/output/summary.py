@@ -47,7 +47,7 @@ def print_repair_plan_hint(gap_report: Mapping[str, object]) -> None:
         return
     critical_missing = safe_int(repair.get("critical_missing_total", 0))
     missing_total = safe_int(repair.get("missing_total", 0))
-    print("[iwp-build] repair " f"critical_missing={critical_missing} missing_total={missing_total}")
+    print(f"[iwp-build] repair critical_missing={critical_missing} missing_total={missing_total}")
     next_actions = repair.get("next_actions")
     if not isinstance(next_actions, list):
         return

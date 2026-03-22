@@ -270,13 +270,11 @@ def _run_core(
             "covered_nodes": metrics.linked_nodes,
             "schema_checked_files": schema_result.checked_files,
             "schema_matched_files": schema_result.matched_files,
-                "kind_breakdown": kind_stats,
-                "profile_breakdown": profile_breakdown(
-                    target_nodes, linked_node_keys, profile_by_node
-                ),
+            "kind_breakdown": kind_stats,
+            "profile_breakdown": profile_breakdown(target_nodes, linked_node_keys, profile_by_node),
         },
         "metrics": metrics.to_dict(),
-            "profile_metrics": profile_breakdown(target_nodes, linked_node_keys, profile_by_node),
+        "profile_metrics": profile_breakdown(target_nodes, linked_node_keys, profile_by_node),
         "diagnostics": [d.to_dict() for d in diagnostics],
         "nodes": [node.to_dict() for node in target_nodes],
         "links_valid": valid_link_reports,

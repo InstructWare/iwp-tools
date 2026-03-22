@@ -40,7 +40,9 @@ class SessionService:
         allow_custom_id: bool = False,
     ) -> dict[str, Any]:
         if session_id is not None and not allow_custom_id:
-            raise RuntimeError("custom session_id is not allowed for session start in current workflow")
+            raise RuntimeError(
+                "custom session_id is not allowed for session start in current workflow"
+            )
         current_open = self._latest_active_session()
         if current_open is not None:
             commands = self._next_step_commands()
@@ -148,9 +150,11 @@ class SessionService:
                 max_chars=max(0, resolved_max_chars),
             ),
         )
-        resolved_node_severity = str(
-            node_severity or getattr(self._config.session, "diff_node_severity", "all")
-        ).strip().lower()
+        resolved_node_severity = (
+            str(node_severity or getattr(self._config.session, "diff_node_severity", "all"))
+            .strip()
+            .lower()
+        )
         if resolved_node_severity not in {"all", "error", "warning"}:
             resolved_node_severity = "all"
         resolved_node_file_types = self._normalize_filter_values(node_file_types)
@@ -653,7 +657,9 @@ class SessionService:
             return set()
         return {str(item).strip() for item in values if str(item).strip()}
 
-    def _compute_link_density_signals(self, changed_code_files: list[str]) -> list[dict[str, object]]:
+    def _compute_link_density_signals(
+        self, changed_code_files: list[str]
+    ) -> list[dict[str, object]]:
         if not changed_code_files:
             return []
         signals: list[dict[str, object]] = []
@@ -704,7 +710,8 @@ class SessionService:
                 "lint_summary": gate_data.get("lint_report", {}).get("summary", {}),
                 "lint_diagnostics": diagnostics if isinstance(diagnostics, list) else [],
             },
-            "commit_result": commit_payload or {
+            "commit_result": commit_payload
+            or {
                 "status": "blocked",
                 "baseline_id_before": intent_diff.get("baseline_id_before"),
                 "baseline_id_after": None,

@@ -57,7 +57,12 @@ def compute_code_change_details(
         cur = current.get(path)
         if not _is_code_path(path, prev, cur, include_ext_set):
             continue
-        if prev is not None and cur is not None and prev.digest == cur.digest and prev.size == cur.size:
+        if (
+            prev is not None
+            and cur is not None
+            and prev.digest == cur.digest
+            and prev.size == cur.size
+        ):
             continue
         change_kind: str
         if prev is None:

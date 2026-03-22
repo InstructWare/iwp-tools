@@ -89,7 +89,10 @@ def _default_coverage_profiles() -> list[CoverageProfile]:
         ),
         CoverageProfile(
             name="views_interaction",
-            computed_kind_prefixes=["views.pages.interaction_hooks", "views.components.interaction_hooks"],
+            computed_kind_prefixes=[
+                "views.pages.interaction_hooks",
+                "views.components.interaction_hooks",
+            ],
             anchor_levels=["interaction"],
             node_linked_min=100.0,
             critical_linked_min=100.0,
@@ -97,7 +100,11 @@ def _default_coverage_profiles() -> list[CoverageProfile]:
         ),
         CoverageProfile(
             name="views_structure",
-            computed_kind_prefixes=["views.pages.layout_tree", "views.components.layout", "views.pages.display_rules"],
+            computed_kind_prefixes=[
+                "views.pages.layout_tree",
+                "views.components.layout",
+                "views.pages.display_rules",
+            ],
             anchor_levels=["structure"],
             node_linked_min=85.0,
             critical_linked_min=100.0,
@@ -274,27 +281,17 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
                 fallback=0.25,
             ),
             code_diff_level=_load_code_diff_level(session_raw.get("code_diff_level", "summary")),
-            code_diff_context_lines=max(
-                0, int(session_raw.get("code_diff_context_lines", 3))
-            ),
-            code_diff_max_chars=max(
-                0, int(session_raw.get("code_diff_max_chars", 12000))
-            ),
+            code_diff_context_lines=max(0, int(session_raw.get("code_diff_context_lines", 3))),
+            code_diff_max_chars=max(0, int(session_raw.get("code_diff_max_chars", 12000))),
             diff_node_severity=_load_node_severity(session_raw.get("diff_node_severity", "all")),
             markdown_excerpt_max_chars=max(
                 0, int(session_raw.get("markdown_excerpt_max_chars", 240))
             ),
             max_text_lines=max(20, int(session_raw.get("max_text_lines", 200))),
             max_hint_items=max(1, int(session_raw.get("max_hint_items", 20))),
-            max_diagnostics_items=max(
-                1, int(session_raw.get("max_diagnostics_items", 20))
-            ),
-            baseline_gap_max_items=max(
-                1, int(session_raw.get("baseline_gap_max_items", 20))
-            ),
-            warning_summary_top_n=max(
-                1, int(session_raw.get("warning_summary_top_n", 2))
-            ),
+            max_diagnostics_items=max(1, int(session_raw.get("max_diagnostics_items", 20))),
+            baseline_gap_max_items=max(1, int(session_raw.get("baseline_gap_max_items", 20))),
+            warning_summary_top_n=max(1, int(session_raw.get("warning_summary_top_n", 2))),
         ),
         execution_presets=_load_execution_presets(raw.get("execution_presets", {})),
     )

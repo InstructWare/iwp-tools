@@ -31,7 +31,11 @@ def _base_schema() -> dict:
         "kind_rules": {"format": "{file_type_id}.{section_key}"},
         "section_i18n": {"layout_tree": {"en": ["Layout Tree"]}},
         "file_type_schemas": [
-            {"id": "docs", "path_patterns": ["**/*.md", "*.md"], "sections": [{"key": "layout_tree"}]}
+            {
+                "id": "docs",
+                "path_patterns": ["**/*.md", "*.md"],
+                "sections": [{"key": "layout_tree"}],
+            }
         ],
     }
 
@@ -123,7 +127,9 @@ class IwpBuildSessionCliTests(unittest.TestCase):
                 ]
             )
             self.assertEqual(first_exit, 0)
-            first_payload = json.loads((out_dir / "session.start.1.json").read_text(encoding="utf-8"))
+            first_payload = json.loads(
+                (out_dir / "session.start.1.json").read_text(encoding="utf-8")
+            )
             second_exit = main(
                 [
                     "session",
@@ -137,7 +143,9 @@ class IwpBuildSessionCliTests(unittest.TestCase):
                 ]
             )
             self.assertEqual(second_exit, 0)
-            second_payload = json.loads((out_dir / "session.start.2.json").read_text(encoding="utf-8"))
+            second_payload = json.loads(
+                (out_dir / "session.start.2.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(second_payload["session_id"], first_payload["session_id"])
             self.assertTrue(bool(second_payload.get("reused_current")))
 
@@ -174,7 +182,10 @@ class IwpBuildSessionCliTests(unittest.TestCase):
                 schema_path=schema_path,
                 node_registry_file=".iwp/node_registry.v1.json",
             )
-            _write(link_file, "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n")
+            _write(
+                link_file,
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
+            )
             self.assertEqual(main(["build", "--config", str(config_path)]), 0)
             self.assertEqual(main(["session", "start", "--config", str(config_path)]), 0)
             _write(link_file, link_file.read_text(encoding="utf-8") + "// changed\n")
@@ -297,7 +308,10 @@ class IwpBuildSessionCliTests(unittest.TestCase):
                 schema_path=schema_path,
                 node_registry_file=".iwp/node_registry.v1.json",
             )
-            _write(link_file, "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n")
+            _write(
+                link_file,
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
+            )
             build_seed_exit = main(
                 [
                     "build",
@@ -332,7 +346,9 @@ class IwpBuildSessionCliTests(unittest.TestCase):
                 ]
             )
             self.assertEqual(current_exit, 0)
-            current_payload = json.loads((out_dir / "session.current.json").read_text(encoding="utf-8"))
+            current_payload = json.loads(
+                (out_dir / "session.current.json").read_text(encoding="utf-8")
+            )
             self.assertTrue(current_payload["has_open_session"])
             self.assertEqual(current_payload["session"]["session_id"], started_id)
 
@@ -385,7 +401,9 @@ class IwpBuildSessionCliTests(unittest.TestCase):
                 ]
             )
             self.assertEqual(diff_hunk_exit, 0)
-            diff_hunk_payload = json.loads((out_dir / "session.diff.hunk.json").read_text(encoding="utf-8"))
+            diff_hunk_payload = json.loads(
+                (out_dir / "session.diff.hunk.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(diff_hunk_payload["code_diff_level"], "hunk")
             self.assertTrue(diff_hunk_payload["changed_code_details"])
             self.assertIn("hunks", diff_hunk_payload["changed_code_details"][0])
@@ -469,7 +487,9 @@ class IwpBuildSessionCliTests(unittest.TestCase):
                 ]
             )
             self.assertEqual(commit_blocked_exit, 1)
-            blocked_payload = json.loads((out_dir / "session.commit.json").read_text(encoding="utf-8"))
+            blocked_payload = json.loads(
+                (out_dir / "session.commit.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(blocked_payload["status"], "blocked")
             self.assertFalse(bool(blocked_payload["sidecar_fresh"]))
             self.assertIn("code_sidecar", blocked_payload.get("blocked_by", []))
@@ -488,7 +508,9 @@ class IwpBuildSessionCliTests(unittest.TestCase):
                 ]
             )
             self.assertEqual(commit_exit, 0)
-            commit_payload = json.loads((out_dir / "session.commit.json").read_text(encoding="utf-8"))
+            commit_payload = json.loads(
+                (out_dir / "session.commit.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(commit_payload["session_id"], started_id)
             self.assertIn("sidecar_fresh", commit_payload)
             self.assertIn("compiled_at", commit_payload)
@@ -497,7 +519,9 @@ class IwpBuildSessionCliTests(unittest.TestCase):
             store = SnapshotStore((config.project_root / config.snapshot_db_file).resolve())
             baseline_after_commit = store.latest_snapshot_id()
             self.assertIsNotNone(baseline_after_commit)
-            evidence_payload = json.loads((out_dir / "session.evidence.json").read_text(encoding="utf-8"))
+            evidence_payload = json.loads(
+                (out_dir / "session.evidence.json").read_text(encoding="utf-8")
+            )
             self.assertIn("intent_diff", evidence_payload)
 
             build_exit = main(

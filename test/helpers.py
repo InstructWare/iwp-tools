@@ -175,7 +175,9 @@ def assert_build_diff_contract(
     if expected_mode != "bootstrap_full":
         testcase.assertIn(expected_md_file, changed_md_files)
         testcase.assertGreaterEqual(summary["impacted_nodes_count"], min_impacted_nodes)
-        testcase.assertTrue(any(node.get("source_path") == expected_md_file for node in impacted_nodes))
+        testcase.assertTrue(
+            any(node.get("source_path") == expected_md_file for node in impacted_nodes)
+        )
     else:
         testcase.assertEqual(changed_md_files, [])
         testcase.assertEqual(impacted_nodes, [])

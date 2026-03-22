@@ -51,7 +51,10 @@ def verify_compiled_context(
             invalid_files.append(source_path)
             continue
 
-        if str(raw.get("artifact", "")) != "iwc" or raw.get("version") not in SUPPORTED_IWC_JSON_VERSIONS:
+        if (
+            str(raw.get("artifact", "")) != "iwc"
+            or raw.get("version") not in SUPPORTED_IWC_JSON_VERSIONS
+        ):
             invalid_files.append(source_path)
             continue
         payload_source_path = str(raw.get("source_path", ""))

@@ -21,7 +21,9 @@ def build_sidecar_next_actions() -> list[dict[str, object]]:
     ]
 
 
-def build_next_command_examples(*, next_actions: list[dict[str, object]], max_items: int) -> list[str]:
+def build_next_command_examples(
+    *, next_actions: list[dict[str, object]], max_items: int
+) -> list[str]:
     commands: list[str] = []
     seen: set[str] = set()
     for action in next_actions:
@@ -38,7 +40,9 @@ def build_next_command_examples(*, next_actions: list[dict[str, object]], max_it
     return commands
 
 
-def build_recommended_next_chain(*, next_actions: list[dict[str, object]], max_items: int) -> list[str]:
+def build_recommended_next_chain(
+    *, next_actions: list[dict[str, object]], max_items: int
+) -> list[str]:
     chain: list[str] = []
     seen: set[str] = set()
     for action in next_actions:

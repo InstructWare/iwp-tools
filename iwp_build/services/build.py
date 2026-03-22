@@ -141,7 +141,7 @@ def run_build(
             "fix diagnostics above, then rerun: "
             "uv run iwp-build build --config .iwp-lint.yaml --mode diff"
         )
-        print("[iwp-build] baseline remains " f"id={baseline_before.get('baseline_snapshot_id')}")
+        print(f"[iwp-build] baseline remains id={baseline_before.get('baseline_snapshot_id')}")
         _write_build_outputs(
             json_path=json_path,
             full_payload=full_payload,

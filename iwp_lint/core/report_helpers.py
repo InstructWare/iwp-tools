@@ -108,14 +108,17 @@ def _source_target_distribution(valid_links: list[LinkAnnotation]) -> dict[str, 
     out: dict[str, list[str]] = {}
     for source_path, counts in by_source_target.items():
         out[source_path] = [
-            file_path for file_path, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            file_path
+            for file_path, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         ]
     return out
 
 
 def _global_target_distribution(valid_links: list[LinkAnnotation]) -> list[str]:
     counts: Counter[str] = Counter(link.file_path for link in valid_links)
-    return [file_path for file_path, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
+    return [
+        file_path for file_path, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
 
 
 def _candidate_score(

@@ -42,8 +42,7 @@ def build_reconcile_diagnostics_bundle(
     warning_items = [
         item
         for item in all_diagnostics
-        if isinstance(item, dict)
-        and str(item.get("severity", "error")).strip().lower() != "error"
+        if isinstance(item, dict) and str(item.get("severity", "error")).strip().lower() != "error"
     ]
     top_warnings = [
         {

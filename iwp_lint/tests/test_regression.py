@@ -1186,9 +1186,7 @@ class IwpLintRegressionTests(unittest.TestCase):
             title_only_report = run_full(
                 LintConfig(**base_kwargs, critical_granularity="title_only")
             )
-            all_critical = [
-                item for item in all_report["diagnostics"] if item["code"] == "IWP108"
-            ]
+            all_critical = [item for item in all_report["diagnostics"] if item["code"] == "IWP108"]
             title_only_critical = [
                 item for item in title_only_report["diagnostics"] if item["code"] == "IWP108"
             ]
@@ -1314,6 +1312,7 @@ class IwpLintRegressionTests(unittest.TestCase):
         self.assertTrue(any("links normalize" in item for item in hints))
         self.assertTrue(any("@iwp.link" in item for item in hints))
         self.assertTrue(any("tiny-diff" in item for item in hints))
+
 
 if __name__ == "__main__":
     unittest.main()

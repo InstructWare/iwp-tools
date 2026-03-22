@@ -366,7 +366,9 @@ def _resolve_session_id(
             if isinstance(resolved, str) and resolved.strip():
                 return resolved
     if auto_start_session and action in {"diff", "reconcile"}:
-        started = session_start(config=config, metadata={"origin": f"iwp-build session {action} auto-start"})
+        started = session_start(
+            config=config, metadata={"origin": f"iwp-build session {action} auto-start"}
+        )
         resolved = str(started.get("session_id", "")).strip() if isinstance(started, dict) else ""
         if resolved:
             print(f"[iwp-build] auto-started session id={resolved} for action={action}")
@@ -383,6 +385,7 @@ def _resolve_session_id(
         "next steps:\n"
         f"{command_lines}"
     )
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

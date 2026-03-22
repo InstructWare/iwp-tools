@@ -12,7 +12,7 @@ def build_structured_hints(
 ) -> list[dict[str, object]]:
     hints = collect_remediation_hints(diagnostics)
     results: list[dict[str, object]] = []
-    for hint in hints[:max(0, max_items)]:
+    for hint in hints[: max(0, max_items)]:
         command = hint.replace("run: ", "") if hint.startswith("run: ") else ""
         results.append(
             {
@@ -54,4 +54,4 @@ def build_diff_excerpt(diff_payload: dict[str, object], *, max_items: int) -> li
     if not text:
         return []
     lines = text.splitlines()
-    return lines[:max(0, max_items)]
+    return lines[: max(0, max_items)]

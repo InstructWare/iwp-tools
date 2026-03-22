@@ -63,7 +63,9 @@ def threshold_diagnostics(
                 file_path=config.iwp_root,
             )
         )
-    tiny_diff_active = mode == "diff" and 0 < metrics.total_nodes < config.tiny_diff.min_impacted_nodes
+    tiny_diff_active = (
+        mode == "diff" and 0 < metrics.total_nodes < config.tiny_diff.min_impacted_nodes
+    )
     tiny_diff_suffix = (
         " (tiny-diff guardrail active: "
         f"impacted_nodes={metrics.total_nodes}, "

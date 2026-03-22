@@ -19,7 +19,9 @@ def query_node_catalog(
 ) -> dict[str, object]:
     catalog_path = (config.project_root / config.node_catalog_file).resolve()
     index_db_path = (config.project_root / config.node_index_db_file).resolve()
-    entries = load_entries_with_index_fallback(index_db_path=index_db_path, catalog_path=catalog_path)
+    entries = load_entries_with_index_fallback(
+        index_db_path=index_db_path, catalog_path=catalog_path
+    )
     candidates = entries
 
     if source_path:
@@ -55,10 +57,14 @@ def query_node_catalog(
     }
 
 
-def export_node_catalog(config: LintConfig, source_paths: list[str] | None = None) -> dict[str, object]:
+def export_node_catalog(
+    config: LintConfig, source_paths: list[str] | None = None
+) -> dict[str, object]:
     catalog_path = (config.project_root / config.node_catalog_file).resolve()
     index_db_path = (config.project_root / config.node_index_db_file).resolve()
-    entries = load_entries_with_index_fallback(index_db_path=index_db_path, catalog_path=catalog_path)
+    entries = load_entries_with_index_fallback(
+        index_db_path=index_db_path, catalog_path=catalog_path
+    )
     normalized_sources = [item.strip() for item in (source_paths or []) if item and item.strip()]
     if normalized_sources:
         source_set = set(normalized_sources)

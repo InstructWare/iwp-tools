@@ -21,17 +21,23 @@ def add_session_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
         action="store_true",
         help="Reuse current open session when present; otherwise start a new session",
     )
-    session_start_cmd.add_argument("--json", help="Write session payload JSON to path", default=None)
+    session_start_cmd.add_argument(
+        "--json", help="Write session payload JSON to path", default=None
+    )
     session_start_cmd.set_defaults(command="session", session_action="start")
 
     session_current_cmd = session_sub.add_parser("current", help="Show current open session")
-    session_current_cmd.add_argument("--config", help="Path to .iwp-lint.yaml or .json", default=None)
+    session_current_cmd.add_argument(
+        "--config", help="Path to .iwp-lint.yaml or .json", default=None
+    )
     session_current_cmd.add_argument(
         "--preset",
         default=None,
         help="Execution preset name from .iwp-lint.yaml execution_presets",
     )
-    session_current_cmd.add_argument("--json", help="Write session payload JSON to path", default=None)
+    session_current_cmd.add_argument(
+        "--json", help="Write session payload JSON to path", default=None
+    )
     session_current_cmd.set_defaults(command="session", session_action="current")
 
     session_diff_cmd = session_sub.add_parser("diff", help="Compute diff against session baseline")
@@ -104,7 +110,9 @@ def add_session_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
         "commit",
         help="Run gate and atomically advance baseline (the only baseline writer)",
     )
-    session_commit_cmd.add_argument("--config", help="Path to .iwp-lint.yaml or .json", default=None)
+    session_commit_cmd.add_argument(
+        "--config", help="Path to .iwp-lint.yaml or .json", default=None
+    )
     session_commit_cmd.add_argument(
         "--preset",
         default=None,
@@ -144,14 +152,18 @@ def add_session_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
         help="Maximum total chars for code diff hunks (hunk mode only)",
     )
     add_session_node_filter_args(session_commit_cmd)
-    session_commit_cmd.add_argument("--json", help="Write session payload JSON to path", default=None)
+    session_commit_cmd.add_argument(
+        "--json", help="Write session payload JSON to path", default=None
+    )
     session_commit_cmd.set_defaults(command="session", session_action="commit")
 
     session_reconcile_cmd = session_sub.add_parser(
         "reconcile",
         help="Run diff + optional normalize + gate and return commit readiness",
     )
-    session_reconcile_cmd.add_argument("--config", help="Path to .iwp-lint.yaml or .json", default=None)
+    session_reconcile_cmd.add_argument(
+        "--config", help="Path to .iwp-lint.yaml or .json", default=None
+    )
     session_reconcile_cmd.add_argument(
         "--preset",
         default=None,
@@ -186,7 +198,9 @@ def add_session_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
         help="Maximum total chars for code diff hunks (hunk mode only)",
     )
     add_session_node_filter_args(session_reconcile_cmd)
-    session_reconcile_cmd.add_argument("--json", help="Write reconcile payload JSON to path", default=None)
+    session_reconcile_cmd.add_argument(
+        "--json", help="Write reconcile payload JSON to path", default=None
+    )
     session_reconcile_cmd.add_argument(
         "--format",
         choices=["text", "json", "both"],
@@ -242,13 +256,17 @@ def add_session_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
         "normalize-links",
         help="Normalize @iwp.link annotations within iwp-build session flow",
     )
-    session_normalize_cmd.add_argument("--config", help="Path to .iwp-lint.yaml or .json", default=None)
+    session_normalize_cmd.add_argument(
+        "--config", help="Path to .iwp-lint.yaml or .json", default=None
+    )
     session_normalize_cmd.add_argument(
         "--preset",
         default=None,
         help="Execution preset name from .iwp-lint.yaml execution_presets",
     )
-    session_normalize_cmd.add_argument("--json", help="Write session payload JSON to path", default=None)
+    session_normalize_cmd.add_argument(
+        "--json", help="Write session payload JSON to path", default=None
+    )
     session_normalize_cmd.set_defaults(command="session", session_action="normalize_links")
 
     session_audit_cmd = session_sub.add_parser("audit", help="Read session audit events")
@@ -258,6 +276,10 @@ def add_session_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
         default=None,
         help="Execution preset name from .iwp-lint.yaml execution_presets",
     )
-    session_audit_cmd.add_argument("--session-id", required=True, help="Session id created by session start")
-    session_audit_cmd.add_argument("--json", help="Write session payload JSON to path", default=None)
+    session_audit_cmd.add_argument(
+        "--session-id", required=True, help="Session id created by session start"
+    )
+    session_audit_cmd.add_argument(
+        "--json", help="Write session payload JSON to path", default=None
+    )
     session_audit_cmd.set_defaults(command="session", session_action="audit")

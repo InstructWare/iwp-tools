@@ -98,11 +98,7 @@ def resolve_reconcile_session_id(request: Any) -> str:
         return started_id
     commands = _session_next_step_commands()
     command_lines = "\n".join(f"- {item}" for item in commands)
-    raise RuntimeError(
-        "no open session\n"
-        "next steps:\n"
-        f"{command_lines}"
-    )
+    raise RuntimeError(f"no open session\nnext steps:\n{command_lines}")
 
 
 def run_session_diff_for_reconcile(request: Any, resolved_session_id: str) -> dict[str, object]:

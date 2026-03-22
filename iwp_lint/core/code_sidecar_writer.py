@@ -44,7 +44,9 @@ def write_code_sidecar(
     entry_index = {(item.source_path, item.node_id): item for item in entries}
     source_cache: dict[str, list[str]] = {}
     links_by_code: dict[str, list[Any]] = {}
-    for link in sorted(links, key=lambda item: (item.file_path, item.line, item.column, item.node_id)):
+    for link in sorted(
+        links, key=lambda item: (item.file_path, item.line, item.column, item.node_id)
+    ):
         links_by_code.setdefault(link.file_path, []).append(link)
 
     files_written: list[str] = []
@@ -105,7 +107,9 @@ def write_code_sidecar(
                         _render_context_block(
                             config=config,
                             entry=entry,
-                            source_lines=_load_source_lines(config, source_cache, entry.source_path),
+                            source_lines=_load_source_lines(
+                                config, source_cache, entry.source_path
+                            ),
                         ),
                     )
                 )

@@ -63,7 +63,9 @@ def run_verify(
         result = unittest.TextTestRunner(stream=sys.stdout, verbosity=1).run(suite)
         if not result.wasSuccessful():
             tests_gate = "FAIL"
-            print(f"[iwp-build] verify gates protocol={protocol_gate} tests={tests_gate} overall=FAIL")
+            print(
+                f"[iwp-build] verify gates protocol={protocol_gate} tests={tests_gate} overall=FAIL"
+            )
             return 1
         tests_gate = "PASS"
     overall = "PASS"

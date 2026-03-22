@@ -167,7 +167,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     links_cmd = sub.add_parser("links", help="Normalize @iwp.link annotations")
     links_sub = links_cmd.add_subparsers(dest="links_action", required=True)
-    links_normalize = links_sub.add_parser("normalize", parents=[common], help="Normalize link comments")
+    links_normalize = links_sub.add_parser(
+        "normalize", parents=[common], help="Normalize link comments"
+    )
     links_normalize.add_argument(
         "--write",
         action="store_true",

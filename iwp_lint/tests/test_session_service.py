@@ -102,7 +102,10 @@ class SessionServiceTests(unittest.TestCase):
                 schema_path=schema_path,
                 node_registry_file=".iwp/node_registry.v1.json",
             )
-            _write(link_file, "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n")
+            _write(
+                link_file,
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
+            )
 
             service = SessionService(config)
             started = service.start()
@@ -163,7 +166,10 @@ class SessionServiceTests(unittest.TestCase):
                 schema_path=schema_path,
                 node_registry_file=".iwp/node_registry.v1.json",
             )
-            _write(link_file, "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n")
+            _write(
+                link_file,
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
+            )
             service = SessionService(config)
             session_1 = service.start()
             service.commit(
@@ -229,7 +235,10 @@ class SessionServiceTests(unittest.TestCase):
                 schema_path=schema_path,
                 node_registry_file=".iwp/node_registry.v1.json",
             )
-            _write(link_file, "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n")
+            _write(
+                link_file,
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
+            )
             service = SessionService(config)
             session_1 = service.start()
             service.commit(
@@ -284,7 +293,10 @@ class SessionServiceTests(unittest.TestCase):
                 schema_path=schema_path,
                 node_registry_file=".iwp/node_registry.v1.json",
             )
-            _write(link_file, "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n")
+            _write(
+                link_file,
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
+            )
 
             service = SessionService(config)
             session_1 = service.start()
