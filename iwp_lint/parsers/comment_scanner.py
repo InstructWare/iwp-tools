@@ -11,17 +11,34 @@ LINK_RE = re.compile(r"@iwp\.link\s+([^:\s]+\.md)::([^:\s]+)(?!::)")
 NODE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,127}$")
 
 
-def discover_code_files(root: Path, code_roots: list[str], include_ext: list[str]) -> list[Path]:
+def discover_code_files(
+    root: Path,
+    code_roots: list[str],
+    include_ext: list[str],
+    exclude_globs: list[str] | None = None,
+) -> list[Path]:
     include_ext_set = {ext if ext.startswith(".") else f".{ext}" for ext in include_ext}
+    excluded = list(exclude_globs or [])
     files: list[Path] = []
     for code_root in code_roots:
         base = (root / code_root).resolve()
         if not base.exists():
             continue
         for file_path in base.rglob("*"):
-            if file_path.is_file() and file_path.suffix in include_ext_set:
-                files.append(file_path)
+            if not file_path.is_file() or file_path.suffix not in include_ext_set:
+                continue
+            try:
+                rel_path = file_path.relative_to(root).as_posix()
+            except ValueError:
+                continue
+            if _is_excluded_path(rel_path, excluded):
+                continue
+            files.append(file_path)
     return sorted(set(files))
+
+
+def _is_excluded_path(rel_path: str, patterns: list[str]) -> bool:
+    return any(fnmatch.fnmatch(rel_path, pattern) for pattern in patterns)
 
 
 def scan_links(

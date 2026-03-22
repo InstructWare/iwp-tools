@@ -5,11 +5,8 @@ from pathlib import Path
 
 from ..config import LintConfig
 from ..core.models import MarkdownNode
-from .snapshot_store import (
-    SnapshotStore,
-    collect_workspace_files,
-    compute_changed_lines,
-)
+from .snapshot_diff import compute_diff_against_snapshot
+from .snapshot_store import SnapshotStore, collect_workspace_files
 
 
 @dataclass
@@ -45,28 +42,14 @@ class DiffProvider:
             iwp_root_path=config.iwp_root_path,
             code_roots=config.code_roots,
             include_ext=config.include_ext,
+            code_exclude_globs=config.code_exclude_globs,
             exclude_markdown_globs=config.schema_exclude_markdown_globs,
         )
         current = {item.path: item for item in current_files}
-
-        changed_files = set(previous.keys()) | set(current.keys())
         result = DiffResult()
-        for path in changed_files:
-            prev = previous.get(path)
-            cur = current.get(path)
-            if prev is None or cur is None:
-                result.changed_files.add(path)
-                if path.endswith(".md"):
-                    result.changed_lines_by_file[path] = {1}
-                continue
-            if prev.digest == cur.digest and prev.size == cur.size:
-                continue
-            result.changed_files.add(path)
-            if path.endswith(".md"):
-                old_content = prev.content or ""
-                new_content = cur.content or ""
-                lines = compute_changed_lines(old_content, new_content)
-                result.changed_lines_by_file[path] = lines or {1}
+        changed_files, changed_lines_by_file = compute_diff_against_snapshot(previous, current)
+        result.changed_files = changed_files
+        result.changed_lines_by_file = changed_lines_by_file
         return result
 
 

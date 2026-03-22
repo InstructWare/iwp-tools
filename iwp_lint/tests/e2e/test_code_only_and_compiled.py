@@ -6,6 +6,7 @@ from test.helpers import (
     SCHEMA_PROFILES,
     apply_schema_profile,
     copy_scenario_to_workspace,
+    create_snapshot_baseline,
     read_json,
     run_build,
     run_lint,
@@ -38,6 +39,7 @@ class CodeOnlyAndCompiledLintE2E(unittest.TestCase):
                     run_build(["build", "--config", str(config_path), "--mode", "auto"]),
                     f"baseline build ({profile})",
                 )
+                create_snapshot_baseline(config_path)
 
                 link_file = workspace / "_ir/src/iwp_links.ts"
                 current = link_file.read_text(encoding="utf-8")

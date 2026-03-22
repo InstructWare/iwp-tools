@@ -13,6 +13,8 @@ def load_schema_profile(schema_source: Path | str) -> SchemaProfile:
     modes = raw.get("modes", {})
     global_rules = raw.get("global_rules", {})
     kind_rules = raw.get("kind_rules", {})
+    marker_rules = raw.get("marker_rules", {})
+    text_marker_rules = marker_rules.get("text_marker", {})
     section_i18n_raw = raw.get("section_i18n", {})
     section_i18n = {
         str(key): {
@@ -33,6 +35,11 @@ def load_schema_profile(schema_source: Path | str) -> SchemaProfile:
         kind_rule_format=str(kind_rules.get("format", "{file_type_id}.{section_key}")),
         section_i18n=section_i18n,
         file_type_schemas=file_types,
+        text_marker_enabled=bool(text_marker_rules.get("enabled", False)),
+        text_marker_token=str(text_marker_rules.get("token", "[text]")),
+        text_marker_allowed_sections=[
+            str(item) for item in text_marker_rules.get("allowed_sections", [])
+        ],
     )
 
 
@@ -48,7 +55,6 @@ def _read_schema_text(schema_source: Path | str) -> str:
         alias = source.split(":", 1)[1].strip()
         return _read_builtin_schema_text(alias or "iwp-schema.v1")
 
-    # Backward-compatible path string support.
     return Path(source).read_text(encoding="utf-8")
 
 
@@ -61,5 +67,15 @@ def _read_builtin_schema_text(alias: str) -> str:
             f"Unsupported builtin schema alias: {alias}. "
             "Use builtin:iwp-schema.v1 or a filesystem path."
         )
-    resource = files("iwp_lint._bundled_schema").joinpath(file_name)
+    package_name = _resolve_bundled_schema_package()
+    resource = files(package_name).joinpath(file_name)
     return resource.read_text(encoding="utf-8")
+
+
+def _resolve_bundled_schema_package() -> str:
+    package_name = __package__ or ""
+    if package_name.endswith(".schema"):
+        package_name = package_name[: -len(".schema")]
+    if not package_name:
+        package_name = "tools.iwp_lint"
+    return f"{package_name}._bundled_schema"

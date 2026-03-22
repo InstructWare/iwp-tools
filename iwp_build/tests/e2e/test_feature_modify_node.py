@@ -49,25 +49,19 @@ class FeatureModifyNodeBuildE2E(unittest.TestCase):
                         "diff",
                         "--json",
                         str(out_dir / "build_fail.json"),
-                        "--diff-json",
-                        str(out_dir / "build_fail.diff.json"),
                     ]
                 )
                 self.assertEqual(fail_result.returncode, 1)
                 fail_payload = read_json(out_dir / "build_fail.json")
-                fail_diff_payload = read_json(out_dir / "build_fail.diff.json")
                 assert_build_diff_contract(
                     self,
                     fail_payload,
                     expected_md_file="architecture.md",
                     expect_gap_errors=True,
+                    expected_mode="bootstrap_full",
                 )
-                self.assertEqual(
-                    fail_diff_payload["intent_diff"]["changed_md_files"],
-                    fail_payload["intent_diff"]["changed_md_files"],
-                )
-                self.assertNotIn("compile", fail_diff_payload)
-                self.assertNotIn("links_valid", fail_diff_payload["gap_report"])
+                self.assertIn("gap_report", fail_payload)
+                self.assertIn("diagnostics", fail_payload["gap_report"])
 
                 write_links_for_source(workspace, "architecture.md")
                 pass_result = run_build(
@@ -79,22 +73,15 @@ class FeatureModifyNodeBuildE2E(unittest.TestCase):
                         "diff",
                         "--json",
                         str(out_dir / "build_pass.json"),
-                        "--diff-json",
-                        str(out_dir / "build_pass.diff.json"),
                     ]
                 )
                 self._assert_ok(pass_result, f"rebuild after link update ({profile})")
                 pass_payload = read_json(out_dir / "build_pass.json")
-                pass_diff_payload = read_json(out_dir / "build_pass.diff.json")
                 assert_build_diff_contract(
                     self,
                     pass_payload,
                     expected_md_file="architecture.md",
                     expect_gap_errors=False,
+                    expected_mode="bootstrap_full",
                 )
-                self.assertEqual(
-                    pass_diff_payload["intent_diff"]["changed_md_files"],
-                    pass_payload["intent_diff"]["changed_md_files"],
-                )
-                self.assertNotIn("compile", pass_diff_payload)
-                self.assertNotIn("links_valid", pass_diff_payload["gap_report"])
+                self.assertEqual(pass_payload.get("gate_status"), "SKIPPED")

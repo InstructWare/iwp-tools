@@ -6,7 +6,8 @@ import unittest
 import uuid
 from pathlib import Path
 
-from iwp_build.cli import _run_build
+from iwp_build.cli import _run_build, _run_verify
+from iwp_lint.api import compile_context, verify_code_sidecar_freshness
 from iwp_lint.config import LintConfig
 from iwp_lint.parsers.md_parser import parse_markdown_nodes
 from iwp_lint.vcs.snapshot_store import SnapshotStore
@@ -47,7 +48,88 @@ def _workspace_tmpdir() -> tempfile.TemporaryDirectory[str]:
 
 
 class IwpBuildCommitTests(unittest.TestCase):
-    def test_build_does_not_advance_baseline_when_gap_errors_exist(self) -> None:
+    def test_build_emits_code_sidecar_by_default(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            md_file = iwp_root / "architecture.md"
+            _write(md_file, "# Architecture\n\n## Layout Tree\n- Alpha\n")
+            nodes = parse_markdown_nodes(
+                iwp_root=iwp_root,
+                critical_patterns=[],
+                schema_path=schema_path,
+                node_registry_file=".iwp/node_registry.v1.json",
+            )
+            link_file = root / "_ir/src/iwp_links.ts"
+            _write(
+                link_file,
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
+            )
+            config = LintConfig(
+                project_root=root.resolve(),
+                iwp_root="InstructWare.iw",
+                schema_file="schema.json",
+                snapshot_db_file=".iwp/cache/snapshots.sqlite",
+                include_ext=[".ts"],
+                code_roots=["_ir/src"],
+                node_registry_file=".iwp/node_registry.v1.json",
+                node_catalog_file=".iwp/node_catalog.v1.json",
+                compiled_dir=".iwp/compiled",
+            )
+
+            exit_code = _run_build(config, mode="auto", json_path=None)
+            self.assertEqual(exit_code, 0)
+            sidecar_file = root / ".iwp/compiled/code/_ir/src/iwp_links.ts"
+            sidecar_manifest = root / ".iwp/compiled/code/.iwp_sidecar_meta.v1.json"
+            self.assertTrue(sidecar_file.exists())
+            self.assertTrue(sidecar_manifest.exists())
+            sidecar_text = sidecar_file.read_text(encoding="utf-8")
+            self.assertIn("<<<IWP_NODE_CONTEXT source=architecture.md", sidecar_text)
+
+    def test_sidecar_freshness_survives_catalog_regeneration(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            md_file = iwp_root / "architecture.md"
+            _write(md_file, "# Architecture\n\n## Layout Tree\n- Alpha\n")
+            nodes = parse_markdown_nodes(
+                iwp_root=iwp_root,
+                critical_patterns=[],
+                schema_path=schema_path,
+                node_registry_file=".iwp/node_registry.v1.json",
+            )
+            link_file = root / "_ir/src/iwp_links.ts"
+            _write(
+                link_file,
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
+            )
+            config = LintConfig(
+                project_root=root.resolve(),
+                iwp_root="InstructWare.iw",
+                schema_file="schema.json",
+                snapshot_db_file=".iwp/cache/snapshots.sqlite",
+                include_ext=[".ts"],
+                code_roots=["_ir/src"],
+                node_registry_file=".iwp/node_registry.v1.json",
+                node_catalog_file=".iwp/node_catalog.v1.json",
+                compiled_dir=".iwp/compiled",
+            )
+
+            self.assertEqual(_run_build(config, mode="auto", json_path=None), 0)
+            first = verify_code_sidecar_freshness(config)
+            self.assertTrue(bool(first.get("fresh", False)))
+
+            # Simulate reconcile/gate path that recompiles catalog artifacts.
+            compile_context(config)
+            second = verify_code_sidecar_freshness(config)
+            self.assertTrue(bool(second.get("fresh", False)))
+            self.assertEqual(second.get("stale_reasons", []), [])
+
+    def test_build_never_advances_baseline_and_keeps_failures_readonly(self) -> None:
         with _workspace_tmpdir() as td:
             root = Path(td)
             iwp_root = root / "InstructWare.iw"
@@ -82,7 +164,7 @@ class IwpBuildCommitTests(unittest.TestCase):
             self.assertEqual(first_exit, 0)
             store = SnapshotStore((root / config.snapshot_db_file).resolve())
             baseline_before = store.latest_snapshot_id()
-            self.assertIsNotNone(baseline_before)
+            self.assertIsNone(baseline_before)
 
             _write(md_file, "# Architecture\n\n## Layout Tree\n- Alpha\n- Beta\n")
             second_exit = _run_build(config, mode="diff", json_path=None)
@@ -99,14 +181,56 @@ class IwpBuildCommitTests(unittest.TestCase):
             )
             _write(
                 link_file,
-                f"// @iwp.link architecture.md::{next(node.node_id for node in new_nodes if node.anchor_text == 'Beta')}\n",
+                "\n".join(
+                    f"// @iwp.link architecture.md::{node.node_id}" for node in new_nodes
+                )
+                + "\n",
             )
 
             third_exit = _run_build(config, mode="diff", json_path=None)
             self.assertEqual(third_exit, 0)
             baseline_after_success = store.latest_snapshot_id()
-            assert baseline_after_success is not None and baseline_before is not None
-            self.assertGreater(baseline_after_success, baseline_before)
+            self.assertEqual(baseline_after_success, baseline_before)
+
+    def test_verify_protocol_only_gate_passes_without_tests(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            md_file = iwp_root / "architecture.md"
+            _write(md_file, "# Architecture\n\n## Layout Tree\n- Alpha\n")
+            nodes = parse_markdown_nodes(
+                iwp_root=iwp_root,
+                critical_patterns=[],
+                schema_path=schema_path,
+                node_registry_file=".iwp/node_registry.v1.json",
+            )
+            link_file = root / "_ir/src/iwp_links.ts"
+            _write(
+                link_file,
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
+            )
+            config = LintConfig(
+                project_root=root.resolve(),
+                iwp_root="InstructWare.iw",
+                schema_file="schema.json",
+                snapshot_db_file=".iwp/cache/snapshots.sqlite",
+                include_ext=[".ts"],
+                code_roots=["_ir/src"],
+                node_registry_file=".iwp/node_registry.v1.json",
+                node_catalog_file=".iwp/node_catalog.v1.json",
+                compiled_dir=".iwp/compiled",
+            )
+            self.assertEqual(_run_build(config, mode="auto", json_path=None), 0)
+            verify_exit = _run_verify(
+                config,
+                with_tests=False,
+                protocol_only=True,
+                min_severity="warning",
+                quiet_warnings=False,
+            )
+            self.assertEqual(verify_exit, 0)
 
 
 if __name__ == "__main__":

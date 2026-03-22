@@ -46,4 +46,4 @@ class BootstrapOfficialSchemaBuildE2E(unittest.TestCase):
                 self._assert_ok(result, f"bootstrap first build ({profile})")
                 payload = read_json(out_json)
                 self.assertEqual(payload["summary"]["build_mode"], "bootstrap_full")
-                self.assertTrue(payload["summary"]["baseline_bootstrapped"])
+                self.assertFalse(payload["summary"]["baseline_bootstrapped"])

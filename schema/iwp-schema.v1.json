@@ -20,6 +20,17 @@
   "kind_rules": {
     "format": "{file_type_id}.{section_key}"
   },
+  "marker_rules": {
+    "text_marker": {
+      "enabled": true,
+      "token": "[text]",
+      "allowed_sections": [
+        "layout_tree",
+        "layout",
+        "display_rules"
+      ]
+    }
+  },
   "section_i18n": {
     "layout_tree": {
       "en": [
@@ -316,6 +327,334 @@
       "zh-CN": [
         "边界规则"
       ]
+    },
+    "data_bindings": {
+      "en": [
+        "Data Bindings"
+      ],
+      "zh-CN": [
+        "数据绑定"
+      ]
+    },
+    "empty_states": {
+      "en": [
+        "Empty States"
+      ],
+      "zh-CN": [
+        "空态"
+      ]
+    },
+    "accessibility": {
+      "en": [
+        "Accessibility"
+      ],
+      "zh-CN": [
+        "可访问性"
+      ]
+    },
+    "telemetry": {
+      "en": [
+        "Telemetry"
+      ],
+      "zh-CN": [
+        "埋点与遥测"
+      ]
+    },
+    "props_contract": {
+      "en": [
+        "Props Contract"
+      ],
+      "zh-CN": [
+        "属性契约"
+      ]
+    },
+    "slots": {
+      "en": [
+        "Slots"
+      ],
+      "zh-CN": [
+        "插槽"
+      ]
+    },
+    "side_effects": {
+      "en": [
+        "Side Effects"
+      ],
+      "zh-CN": [
+        "副作用"
+      ]
+    },
+    "failure_handling": {
+      "en": [
+        "Failure Handling"
+      ],
+      "zh-CN": [
+        "异常处理"
+      ]
+    },
+    "output": {
+      "en": [
+        "Output"
+      ],
+      "zh-CN": [
+        "输出"
+      ]
+    },
+    "ownership": {
+      "en": [
+        "Ownership"
+      ],
+      "zh-CN": [
+        "归属"
+      ]
+    },
+    "constraints": {
+      "en": [
+        "Constraints"
+      ],
+      "zh-CN": [
+        "约束"
+      ]
+    },
+    "persistence": {
+      "en": [
+        "Persistence"
+      ],
+      "zh-CN": [
+        "持久化"
+      ]
+    },
+    "relations": {
+      "en": [
+        "Relations"
+      ],
+      "zh-CN": [
+        "关系"
+      ]
+    },
+    "indexes": {
+      "en": [
+        "Indexes"
+      ],
+      "zh-CN": [
+        "索引"
+      ]
+    },
+    "setup": {
+      "en": [
+        "Setup"
+      ],
+      "zh-CN": [
+        "前置准备"
+      ]
+    },
+    "assertions": {
+      "en": [
+        "Assertions"
+      ],
+      "zh-CN": [
+        "断言"
+      ]
+    },
+    "cleanup": {
+      "en": [
+        "Cleanup"
+      ],
+      "zh-CN": [
+        "清理"
+      ]
+    },
+    "pages": {
+      "en": [
+        "Pages"
+      ],
+      "zh-CN": [
+        "页面"
+      ]
+    },
+    "components": {
+      "en": [
+        "Components"
+      ],
+      "zh-CN": [
+        "组件"
+      ]
+    },
+    "errors": {
+      "en": [
+        "Errors"
+      ],
+      "zh-CN": [
+        "错误文案"
+      ]
+    },
+    "formatting": {
+      "en": [
+        "Formatting"
+      ],
+      "zh-CN": [
+        "格式化规则"
+      ]
+    },
+    "motion": {
+      "en": [
+        "Motion"
+      ],
+      "zh-CN": [
+        "动效"
+      ]
+    },
+    "component_tokens": {
+      "en": [
+        "Component Tokens"
+      ],
+      "zh-CN": [
+        "组件令牌"
+      ]
+    },
+    "iconography": {
+      "en": [
+        "Iconography"
+      ],
+      "zh-CN": [
+        "图标规范"
+      ]
+    },
+    "security_model": {
+      "en": [
+        "Security Model"
+      ],
+      "zh-CN": [
+        "安全模型"
+      ]
+    },
+    "dependency_governance": {
+      "en": [
+        "Dependency Governance"
+      ],
+      "zh-CN": [
+        "依赖治理"
+      ]
+    },
+    "observability": {
+      "en": [
+        "Observability"
+      ],
+      "zh-CN": [
+        "可观测性"
+      ]
+    },
+    "core_rules": {
+      "en": [
+        "Core Rules"
+      ],
+      "zh-CN": [
+        "核心规则"
+      ]
+    },
+    "boundary_with_manifest": {
+      "en": [
+        "Boundary with manifest.yaml"
+      ],
+      "zh-CN": [
+        "与 manifest.yaml 的边界"
+      ]
+    },
+    "current_constraints": {
+      "en": [
+        "Current Constraints"
+      ],
+      "zh-CN": [
+        "当前约束"
+      ]
+    },
+    "selection_policy": {
+      "en": [
+        "Selection Policy"
+      ],
+      "zh-CN": [
+        "选型策略"
+      ]
+    },
+    "security_license_baseline": {
+      "en": [
+        "Security & License Baseline"
+      ],
+      "zh-CN": [
+        "安全与许可证基线"
+      ]
+    },
+    "scope": {
+      "en": [
+        "Scope"
+      ],
+      "zh-CN": [
+        "范围"
+      ]
+    },
+    "architecture": {
+      "en": [
+        "Architecture"
+      ],
+      "zh-CN": [
+        "架构"
+      ]
+    },
+    "non_goals": {
+      "en": [
+        "Non-goals"
+      ],
+      "zh-CN": [
+        "非目标"
+      ]
+    },
+    "quick_start": {
+      "en": [
+        "Quick Start"
+      ],
+      "zh-CN": [
+        "快速开始"
+      ]
+    },
+    "objective": {
+      "en": [
+        "Objective"
+      ],
+      "zh-CN": [
+        "目标"
+      ]
+    },
+    "input_contract": {
+      "en": [
+        "Input Contract"
+      ],
+      "zh-CN": [
+        "输入契约"
+      ]
+    },
+    "output_contract": {
+      "en": [
+        "Output Contract"
+      ],
+      "zh-CN": [
+        "输出契约"
+      ]
+    },
+    "safety_constraints": {
+      "en": [
+        "Safety Constraints"
+      ],
+      "zh-CN": [
+        "安全约束"
+      ]
+    },
+    "few_shot": {
+      "en": [
+        "Few-shot Examples"
+      ],
+      "zh-CN": [
+        "少样本示例"
+      ]
     }
   },
   "file_type_schemas": [
@@ -337,6 +676,22 @@
         {
           "key": "display_rules",
           "required": false
+        },
+        {
+          "key": "data_bindings",
+          "required": false
+        },
+        {
+          "key": "empty_states",
+          "required": false
+        },
+        {
+          "key": "accessibility",
+          "required": false
+        },
+        {
+          "key": "telemetry",
+          "required": false
         }
       ]
     },
@@ -353,10 +708,63 @@
         },
         {
           "key": "interaction_hooks",
-          "required": true
+          "required": false
         },
         {
           "key": "display_rules",
+          "required": false
+        },
+        {
+          "key": "props_contract",
+          "required": false
+        },
+        {
+          "key": "slots",
+          "required": false
+        },
+        {
+          "key": "accessibility",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "middleware",
+      "path_patterns": [
+        "logic/middleware/**/*.md",
+        "logic/middleware/*.md"
+      ],
+      "sections": [
+        {
+          "key": "trigger",
+          "required": true
+        },
+        {
+          "key": "guard_rules",
+          "required": true
+        },
+        {
+          "key": "post_redirect_rules",
+          "required": true
+        },
+        {
+          "key": "execution_flow",
+          "required": false
+        },
+        {
+          "key": "input",
+          "required": false
+        },
+        {
+          "key": "side_effects",
+          "required": false
+        },
+        {
+          "key": "failure_handling",
+          "required": false
+        },
+        {
+          "key": "output",
           "required": false
         }
       ]
@@ -372,15 +780,27 @@
           "required": true
         },
         {
-          "key": "execution_flow",
-          "required": false
-        },
-        {
           "key": "input",
           "required": false
         },
         {
+          "key": "execution_flow",
+          "required": true
+        },
+        {
           "key": "guard_rules",
+          "required": false
+        },
+        {
+          "key": "side_effects",
+          "required": false
+        },
+        {
+          "key": "failure_handling",
+          "required": false
+        },
+        {
+          "key": "output",
           "required": false
         },
         {
@@ -400,11 +820,15 @@
           "required": true
         },
         {
-          "key": "initialization_rules",
+          "key": "ownership",
           "required": false
         },
         {
-          "key": "derivation_rules",
+          "key": "constraints",
+          "required": false
+        },
+        {
+          "key": "initialization_rules",
           "required": false
         },
         {
@@ -412,7 +836,15 @@
           "required": false
         },
         {
+          "key": "derivation_rules",
+          "required": false
+        },
+        {
           "key": "runtime_guarantees",
+          "required": false
+        },
+        {
+          "key": "persistence",
           "required": false
         }
       ]
@@ -424,15 +856,27 @@
       ],
       "sections": [
         {
+          "key": "purpose",
+          "required": false
+        },
+        {
           "key": "entity",
           "required": true
         },
         {
-          "key": "seed_data",
+          "key": "constraints",
           "required": false
         },
         {
-          "key": "purpose",
+          "key": "relations",
+          "required": false
+        },
+        {
+          "key": "indexes",
+          "required": false
+        },
+        {
+          "key": "seed_data",
           "required": false
         },
         {
@@ -454,6 +898,22 @@
         {
           "key": "scenario",
           "required": true
+        },
+        {
+          "key": "setup",
+          "required": false
+        },
+        {
+          "key": "input",
+          "required": false
+        },
+        {
+          "key": "assertions",
+          "required": false
+        },
+        {
+          "key": "cleanup",
+          "required": false
         }
       ]
     },
@@ -472,11 +932,27 @@
           "required": false
         },
         {
+          "key": "pages",
+          "required": false
+        },
+        {
+          "key": "components",
+          "required": false
+        },
+        {
+          "key": "errors",
+          "required": false
+        },
+        {
           "key": "docs",
           "required": false
         },
         {
           "key": "home",
+          "required": false
+        },
+        {
+          "key": "formatting",
           "required": false
         }
       ]
@@ -493,10 +969,14 @@
         },
         {
           "key": "theme_tokens",
-          "required": false
+          "required": true
         },
         {
           "key": "typography",
+          "required": false
+        },
+        {
+          "key": "spacing_scale",
           "required": false
         },
         {
@@ -504,7 +984,15 @@
           "required": false
         },
         {
-          "key": "spacing_scale",
+          "key": "motion",
+          "required": false
+        },
+        {
+          "key": "component_tokens",
+          "required": false
+        },
+        {
+          "key": "iconography",
           "required": false
         }
       ]
@@ -529,6 +1017,10 @@
         },
         {
           "key": "runtime_guarantees",
+          "required": true
+        },
+        {
+          "key": "security_model",
           "required": true
         }
       ]
@@ -556,7 +1048,78 @@
           "required": true
         },
         {
+          "key": "dependency_governance",
+          "required": false
+        },
+        {
+          "key": "observability",
+          "required": false
+        },
+        {
           "key": "boundary_rules",
+          "required": false
+        }
+      ],
+      "allow_unknown_sections": true
+    },
+    {
+      "id": "governance.dependency",
+      "path_patterns": [
+        "dependency.md"
+      ],
+      "sections": [
+        {
+          "key": "purpose",
+          "required": true
+        },
+        {
+          "key": "core_rules",
+          "required": true
+        },
+        {
+          "key": "boundary_with_manifest",
+          "required": false
+        },
+        {
+          "key": "current_constraints",
+          "required": false
+        },
+        {
+          "key": "selection_policy",
+          "required": false
+        },
+        {
+          "key": "security_license_baseline",
+          "required": false
+        }
+      ],
+      "allow_unknown_sections": true
+    },
+    {
+      "id": "prompts",
+      "path_patterns": [
+        "prompts/**/*.md",
+        "prompts/*.md"
+      ],
+      "sections": [
+        {
+          "key": "objective",
+          "required": true
+        },
+        {
+          "key": "input_contract",
+          "required": false
+        },
+        {
+          "key": "output_contract",
+          "required": false
+        },
+        {
+          "key": "safety_constraints",
+          "required": false
+        },
+        {
+          "key": "few_shot",
           "required": false
         }
       ]
@@ -570,4 +1133,3 @@
     "IWP205": "invalid scenario grammar"
   }
 }
-

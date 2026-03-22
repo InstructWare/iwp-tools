@@ -22,6 +22,7 @@ class FileTypeSchema:
     id: str
     path_patterns: list[str]
     sections: list[SectionSpec]
+    allow_unknown_sections: bool
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> FileTypeSchema:
@@ -29,6 +30,7 @@ class FileTypeSchema:
             id=str(raw["id"]),
             path_patterns=[str(item) for item in raw.get("path_patterns", [])],
             sections=[SectionSpec.from_dict(item) for item in raw.get("sections", [])],
+            allow_unknown_sections=bool(raw.get("allow_unknown_sections", False)),
         )
 
 
@@ -43,3 +45,6 @@ class SchemaProfile:
     kind_rule_format: str
     section_i18n: dict[str, dict[str, list[str]]]
     file_type_schemas: list[FileTypeSchema]
+    text_marker_enabled: bool
+    text_marker_token: str
+    text_marker_allowed_sections: list[str]

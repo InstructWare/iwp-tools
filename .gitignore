@@ -2,12 +2,13 @@ __pycache__/
 *.py[cod]
 *.so
 
+.idea/
 .venv/
 .uv-cache/
 .ruff_cache/
 .pytest_cache/
 .mypy_cache/
-.tmp_iwp_e2e_tests/
+.tmp_iwp**/
 
 dist/
 build/
@@ -15,3 +16,9 @@ build/
 uv.lock
 
 .DS_Store
+
+
+scripts/
+summary/
+docs/
+log/

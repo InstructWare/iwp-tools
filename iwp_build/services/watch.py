@@ -6,8 +6,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from iwp_lint.config import LintConfig, is_builtin_schema_source
-from iwp_lint.schema.schema_validator import list_markdown_rel_paths
+try:
+    from iwp_lint.config import LintConfig, is_builtin_schema_source
+    from iwp_lint.schema.schema_validator import list_markdown_rel_paths
+except ImportError:
+    from ...iwp_lint.config import LintConfig, is_builtin_schema_source
+    from ...iwp_lint.schema.schema_validator import list_markdown_rel_paths
 
 CompileFn = Callable[[LintConfig, list[str] | None], dict[str, object]]
 VerifyFn = Callable[[LintConfig, list[str] | None], dict[str, object]]

@@ -51,7 +51,7 @@ class FeatureAddNodeBuildE2E(unittest.TestCase):
                 )
                 self._assert_ok(init_result, f"initial build ({profile})")
                 baseline_before = latest_snapshot_id(config_path)
-                self.assertIsNotNone(baseline_before)
+                self.assertIsNone(baseline_before)
 
                 write_architecture_markdown(workspace, profile, ["Alpha", "Beta"])
                 fail_result = run_build(
@@ -72,6 +72,7 @@ class FeatureAddNodeBuildE2E(unittest.TestCase):
                     fail_payload,
                     expected_md_file="architecture.md",
                     expect_gap_errors=True,
+                    expected_mode="bootstrap_full",
                 )
                 baseline_after_fail = latest_snapshot_id(config_path)
                 self.assertEqual(baseline_after_fail, baseline_before)
@@ -105,10 +106,10 @@ class FeatureAddNodeBuildE2E(unittest.TestCase):
                     pass_payload,
                     expected_md_file="architecture.md",
                     expect_gap_errors=False,
+                    expected_mode="bootstrap_full",
                 )
                 baseline_after_pass = latest_snapshot_id(config_path)
-                assert baseline_after_pass is not None and baseline_before is not None
-                self.assertGreater(baseline_after_pass, baseline_before)
+                self.assertEqual(baseline_after_pass, baseline_before)
 
                 verify_result = run_build(["verify", "--config", str(config_path)])
                 self._assert_ok(verify_result, f"verify after patch ({profile})")

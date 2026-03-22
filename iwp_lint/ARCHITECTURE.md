@@ -37,9 +37,16 @@ flowchart LR
   SV --> SL["schema/schema_loader.py\nSchema 读取"]
   SV --> SS["schema/schema_semantics.py\n文件类型/Section 解析"]
   API --> DF["vcs/diff_resolver.py\nSnapshot diff resolver"]
-  API --> SP["vcs/snapshot_store.py\n快照 SQLite 存储"]
-  API --> TS["vcs/task_store.py\n(legacy) diff task 存储"]
-  ENG --> NC["core/node_catalog.py\nJSON 导出 + SQLite 索引"]
+  API --> SP["vcs/snapshot_store.py\n快照/会话 SQLite 存储 + 文件采集"]
+  API --> SD["vcs/snapshot_diff.py\nDiff 计算层 (markdown + code)"]
+  ENG --> NC["core/node_catalog.py\nCatalog facade + compile/verify orchestration"]
+  NC --> NQ["core/catalog_query.py\nQuery/Export ranking"]
+  NC --> NI["core/node_index_store.py\nSQLite index IO"]
+  NC --> CW["core/compiled_writer.py\n.iwc dual artifact writer"]
+  NC --> CV["core/compiled_verifier.py\nCompiled artifact verifier"]
+  ENG --> CP["core/coverage_policy.py\nCoverage/profile thresholds"]
+  ENG --> LV["core/link_validation.py\nlink->node mapping diagnostics"]
+  API --> SES["core/session_service.py\nsession start/diff/commit/current/audit"]
 
   ENG --> OUT["console + json report"]
 ```
@@ -51,13 +58,20 @@ flowchart LR
 - `config.py`：配置模型与 `.yaml/.json` 加载
 - `core/engine.py`：`full/diff/schema` 质量规则执行
 - `parsers/md_parser.py`：Markdown 节点提取（heading/list）+ kind 计算
-- `parsers/node_registry.py`：稳定 `node_id`（语义签名 + 历史映射）
+- `parsers/node_registry.py`：稳定键（stable_key）分配 + canonical 短 `node_id` 写回
 - `parsers/comment_scanner.py`：代码注释扫描与协议正则校验
 - `schema/*`：schema profile 读取、文件类型匹配、section 合法性校验
 - `vcs/diff_resolver.py`：DiffProvider 抽象与受影响节点筛选
-- `vcs/snapshot_store.py`：snapshot 基线（SQLite）与文件指纹比较
-- `vcs/task_store.py`：diff task 状态机持久化（JSON 文件，legacy）
-- `core/node_catalog.py`：`node_catalog.v1.json` 导出与 `node_index.v1.sqlite` 查询索引
+- `vcs/snapshot_store.py`：snapshot/session 基线与审计事件（SQLite）+ workspace 文件采集
+- `vcs/snapshot_diff.py`：diff 计算逻辑（文件变更、markdown 行级、代码行级/hunk）
+- `core/node_catalog.py`：catalog/compiled facade 编排入口
+- `core/catalog_query.py`：catalog query/export 与相似度排序
+- `core/node_index_store.py`：`node_index.v1.sqlite` 读写
+- `core/compiled_writer.py`：`.iwc.json/.iwc.md` 双产物写入与清理
+- `core/compiled_verifier.py`：compiled 产物一致性校验
+- `core/coverage_policy.py`：覆盖率阈值、tiny-diff 与 profile 规则
+- `core/link_validation.py`：注释链接对账与 `IWP103/IWP105` 诊断
+- `core/link_normalizer.py`：`@iwp.link` 清理与规范化（stale/重复移除、块内排序与标准格式重写）
 
 ## 3. 关键数据模型
 
@@ -65,7 +79,7 @@ flowchart LR
 
 关键字段：
 
-- `node_id`：节点稳定 ID（由 Node Registry 分配）
+- `node_id`：节点 canonical 短 ID（`n.<hex_prefix>`，按 source_path 最短唯一）
 - `source_path`：相对 IWP 根路径（例如 `views/pages/home.md`）
 - `line_start`/`line_end`：节点在原文中的行范围
 - `section_key`、`file_type_id`、`computed_kind`：Schema 语义上下文
@@ -88,14 +102,21 @@ flowchart LR
 - `path`：项目相对路径
 - `kind`：`markdown` 或 `code`
 - `mtime_ns` / `size` / `digest`：变更识别指纹
-- `content`：仅 markdown 缓存（用于行级差异估算）
+- `content`：文本快照（markdown/code 都缓存，用于行级 diff 与可选 hunk）
 
-### 3.5 DiffTask（`vcs/task_store.py`, legacy）
+### 3.5 CodeDiffOptions 与代码差异明细（`vcs/snapshot_diff.py`）
 
-- `task_id`
-- `status`：`pending` -> `running` -> `done/failed`
-- `changed_files` / `changed_md_files` / `changed_code_files`
-- `impacted_nodes`
+- `CodeDiffOptions.level`：`summary` 或 `hunk`
+- `CodeDiffOptions.context_lines`：hunk 上下文行数
+- `CodeDiffOptions.max_chars`：hunk 总字符上限
+- `compute_code_change_details(...)` 默认输出：
+  - `file_path`
+  - `change_kind`（`added|modified|deleted`）
+  - `changed_line_count`
+  - `changed_line_ranges`
+- 当 `level=hunk` 时附加：
+  - `hunks`
+  - `hunks_truncated`
 
 ## 4. 三条执行路径
 
@@ -161,7 +182,23 @@ flowchart TD
 - 可在脏工作区工作
 - 直接产出变更摘要供编排层消费
 
-## 4.4 `schema` 模式
+## 4.4 `session` 模式（API 内部能力）
+
+`session` 是基于 snapshot 的任务会话运行时，提供给 `iwp-build` 编排层消费：
+
+- `session_start`：创建 open session，记录 `baseline_id_before`
+- `session_current`：读取当前 open session
+- `session_diff`：对比当前工作区与 session baseline，输出：
+  - `changed_md_files` / `changed_code_files`
+  - `changed_code_details`（summary/hunk）
+  - `impacted_nodes`
+  - `link_targets_suggested`
+  - `link_density_signals`
+- `session_commit`：执行 gate（可配置）并原子推进 baseline
+- `session_gate`：执行 compiled + lint gate，返回 `gate_status` 与阻断原因
+- `session_audit`：读取事件链（`session_events`）
+
+## 4.5 `schema` 模式
 
 仅执行 markdown schema 校验，不执行链接覆盖率逻辑。
 
@@ -171,10 +208,14 @@ flowchart TD
 
 - 语义签名：`source_path + file_type_id + section_key + node_type + parent_chain + anchor_text`
 - 文本归一化：Unicode NFKC + `casefold` + 去噪
-- UID 分配策略：
-  1. 精确签名命中（复用历史 uid）
+- stable_key 分配策略：
+  1. 精确签名命中（复用历史 stable_key）
   2. 同池模糊匹配（相似度阈值）
-  3. 新建 uid（`n.<hex>`）
+  3. 新建 stable_key（内部键）
+- canonical `node_id` 生成策略：
+  1. 对同一 `source_path` 内全部 stable_key 取 hash 前缀
+  2. 默认最短长度 4（可配置 `node_id_min_length`）
+  3. 若发生碰撞，对冲突项逐位扩展直到唯一
 
 注册表文件（默认）：
 
@@ -183,13 +224,14 @@ flowchart TD
 ```mermaid
 flowchart LR
   S["当前节点签名"] --> E{"历史精确命中?"}
-  E -- Yes --> U1["复用 uid"]
+  E -- Yes --> U1["复用 stable_key"]
   E -- No --> F{"同池模糊匹配>=阈值?"}
-  F -- Yes --> U2["复用 uid"]
-  F -- No --> N["生成新 uid"]
-  U1 --> W["写回 registry"]
-  U2 --> W
-  N --> W
+  F -- Yes --> U2["复用 stable_key"]
+  F -- No --> N["生成新 stable_key"]
+  U1 --> P["按 source_path 生成最短唯一前缀 node_id"]
+  U2 --> P
+  N --> P
+  P --> W["写回 registry (uid=node_id, stable_key=内部键)"]
 ```
 
 维护建议：
@@ -233,7 +275,7 @@ flowchart LR
 
 `.iwc.json`（canonical）包含：
 
-- 文档级：`artifact=iwc`、`version=2`、`source_path`、`source_hash`、`generated_at`、`schema_version`
+- 文档级：`artifact=iwc`、`version=1`、`source_path`、`source_hash`、`generated_at`、`schema_version`
 - 字典池：`dict.kinds`、`dict.titles`、`dict.sections`、`dict.file_types`
 - 节点级：固定 10 列 tuple（`node_id`、`anchor_text`、`kind_idx`、`title_idx`、`section_idx`、`file_type_idx`、`is_critical`、`source_line_start`、`source_line_end`、`block_text`）
 - `block_text` 为必需字段，用于给 agent 提供原始 markdown 片段锚点
@@ -257,13 +299,24 @@ flowchart LR
 稳定入口在 `iwp_lint/api.py`，用于被 `iwp_build` 或第三方编排器复用：
 
 - `snapshot_action(config, action)`
-- `tasks_list/show/complete/mark_running/mark_failed`（legacy）
+- `baseline_status(config)`
 - `run_quality_gate(config)`
+- `run_gate_suite(config)`
+- `compile_context(config, source_paths=None)`
+- `verify_compiled(config, source_paths=None)`
+- `normalize_annotations(config, write=False)`
+- `build_code_sidecar(config)`
+- `session_start(config, ...)`
+- `session_current(config)`
+- `session_diff(config, ..., code_diff_level=None, code_diff_context_lines=None, code_diff_max_chars=None)`
+- `session_commit(config, ..., enforce_gate=True)`
+- `session_gate(config, ..., session_id)`
+- `session_audit(config, ..., session_id)`
 
 规则：
 
 - 业务逻辑应优先落在 API/核心模块，不放在 CLI 渲染层
-- API 返回结构需要保持向后兼容
+- API 返回结构需要保持稳定与可预测
 
 ## 9. 可扩展点
 
@@ -274,13 +327,14 @@ flowchart LR
 - 新增 schema 约束：`schema/schema_validator.py`
 - 新增 coverage 口径：`core/engine.py` 与 `core/models.py`
 - 新增 diff provider：`vcs/diff_resolver.py`
-- 新增 snapshot/task 存储策略：`vcs/snapshot_store.py` / `vcs/task_store.py`
+- 新增 diff 算法与输出契约：`vcs/snapshot_diff.py`
+- 新增 snapshot/session 存储策略：`vcs/snapshot_store.py`
 
 原则：
 
 - 先扩展数据模型，再扩展校验流程，最后补测试
 - CLI 只做参数与输出，核心逻辑放 API
-- 对外报告字段尽量向后兼容
+- 对外报告字段尽量保持稳定
 
 ## 10. 维护检查清单
 
@@ -288,6 +342,7 @@ flowchart LR
 
 ```bash
 python -m unittest iwp_lint.tests.test_regression
+python -m unittest iwp_lint.tests.test_session_service
 python -m iwp_lint schema --config .iwp-lint.yaml
 python -m iwp_lint full --config .iwp-lint.yaml
 ```
@@ -296,5 +351,5 @@ python -m iwp_lint full --config .iwp-lint.yaml
 
 - 构造“重排列表”“文案微调”“跨语言文档”场景做回归
 - 检查 `.iwp/node_registry.v1.json` 是否符合预期演化
-- 检查 `.iwp/cache/snapshots.sqlite` 与 `.iwp/tasks/` 产物是否符合预期
+- 检查 `.iwp/cache/snapshots.sqlite` 与 `.iwp/compiled/` 产物是否符合预期
 

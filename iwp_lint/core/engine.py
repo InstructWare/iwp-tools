@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -15,8 +14,18 @@ from ..parsers.comment_scanner import (
 from ..parsers.md_parser import parse_markdown_nodes
 from ..schema.schema_validator import validate_markdown_schema
 from ..vcs.diff_resolver import impacted_nodes, load_diff
+from .coverage_policy import (
+    compute_metrics,
+    kind_breakdown,
+    profile_breakdown,
+    profile_threshold_diagnostics,
+    resolve_node_profiles,
+    threshold_diagnostics,
+)
 from .errors import Diagnostic
+from .link_validation import validate_links_against_nodes
 from .models import CoverageMetrics, LinkAnnotation, MarkdownNode
+from .report_helpers import build_link_migration_suggestions, build_repair_summary
 
 NodeKey = tuple[str, str]
 
@@ -27,8 +36,10 @@ def run_full(config: LintConfig) -> dict[str, Any]:
         config.iwp_root_path,
         config.critical_node_patterns,
         schema_path,
+        critical_granularity=config.critical_granularity,
         exclude_markdown_globs=config.schema_exclude_markdown_globs,
         node_registry_file=config.node_registry_file,
+        node_id_min_length=config.node_id_min_length,
     )
     return _run_core(config, nodes, mode="full", changed_md_files=None, changed_code_files=None)
 
@@ -46,8 +57,10 @@ def run_diff(config: LintConfig, base: str | None, head: str | None) -> dict[str
         config.iwp_root_path,
         config.critical_node_patterns,
         schema_path,
+        critical_granularity=config.critical_granularity,
         exclude_markdown_globs=config.schema_exclude_markdown_globs,
         node_registry_file=config.node_registry_file,
+        node_id_min_length=config.node_id_min_length,
     )
     impacted = impacted_nodes(nodes, diff)
     changed_md = {
@@ -129,7 +142,12 @@ def _run_core(
         exclude_markdown_globs=config.schema_exclude_markdown_globs,
     )
     diagnostics.extend(schema_result.diagnostics)
-    code_files = discover_code_files(config.project_root, config.code_roots, config.include_ext)
+    code_files = discover_code_files(
+        config.project_root,
+        config.code_roots,
+        config.include_ext,
+        config.code_exclude_globs,
+    )
     links, scan_diagnostics = scan_links(
         config.project_root, code_files, config.allow_multi_link_per_symbol
     )
@@ -147,54 +165,23 @@ def _run_core(
     diagnostics.extend(validate_link_protocol(links))
 
     link_nodes = link_scope_nodes if link_scope_nodes is not None else target_nodes
-    link_node_index: dict[NodeKey, MarkdownNode] = {
-        (node.source_path, node.node_id): node for node in link_nodes
-    }
-    link_node_source_index: set[NodeKey] = {(node.source_path, node.node_id) for node in link_nodes}
-    link_source_paths = {node.source_path for node in link_nodes}
-
     valid_links: list[LinkAnnotation] = []
     valid_link_reports: list[dict[str, Any]] = []
+    stale_links: list[LinkAnnotation] = []
     should_check_link_mapping = not (mode == "diff" and not target_nodes)
     if should_check_link_mapping:
-        for link in links:
-            if changed_md_files is not None and mode == "diff":
-                if link.source_path not in changed_md_files:
-                    continue
-
-            if link.source_path not in link_source_paths:
-                diagnostics.append(
-                    Diagnostic(
-                        code="IWP103",
-                        message=f"source_path not found in target markdown set: {link.source_path}",
-                        file_path=link.file_path,
-                        line=link.line,
-                        column=link.column,
-                    )
-                )
-                continue
-            if (link.source_path, link.node_id) not in link_node_source_index:
-                diagnostics.append(
-                    Diagnostic(
-                        code="IWP105",
-                        message=(
-                            "node_id does not exist in source_path: "
-                            f"{link.source_path}::{link.node_id}"
-                        ),
-                        file_path=link.file_path,
-                        line=link.line,
-                        column=link.column,
-                    )
-                )
-                continue
-            valid_links.append(link)
-            node = link_node_index[(link.source_path, link.node_id)]
-            valid_link_reports.append(
-                {
-                    **asdict(link),
-                    "computed_kind": node.computed_kind,
-                }
-            )
+        (
+            valid_links,
+            valid_link_reports,
+            stale_links,
+            mapping_diags,
+        ) = validate_links_against_nodes(
+            links=links,
+            link_nodes=link_nodes,
+            changed_md_files=changed_md_files,
+            mode=mode,
+        )
+        diagnostics.extend(mapping_diags)
 
     linked_node_keys: set[NodeKey] = {(link.source_path, link.node_id) for link in valid_links}
     tested_node_keys: set[NodeKey] = {
@@ -210,18 +197,20 @@ def _run_core(
         (node.source_path, node.node_id) for node in target_nodes if node.is_critical
     }
     linked_critical_node_keys = critical_node_keys & linked_node_keys
-    kind_breakdown = _kind_breakdown(valid_link_reports)
-
+    kind_stats = kind_breakdown(valid_link_reports)
+    profile_by_node = resolve_node_profiles(target_nodes, config.coverage_profiles)
     uncovered = [
         node for node in target_nodes if (node.source_path, node.node_id) not in linked_node_keys
     ]
     for node in uncovered:
+        profile = profile_by_node.get((node.source_path, node.node_id))
         diagnostics.append(
             Diagnostic(
                 code="IWP107",
                 message=f"Node not covered: {node.node_id}",
                 file_path=node.source_path,
                 line=node.line_start,
+                severity=profile.missing_severity if profile is not None else "error",
             )
         )
 
@@ -240,15 +229,33 @@ def _run_core(
             )
         )
 
-    metrics = _compute_metrics(
+    metrics = compute_metrics(
         target_nodes,
         linked_node_keys,
         critical_node_keys,
         linked_critical_node_keys,
         tested_node_keys,
     )
-    threshold_diags = _threshold_diagnostics(config, metrics)
+    threshold_diags = threshold_diagnostics(config, metrics, mode=mode)
+    threshold_diags.extend(
+        profile_threshold_diagnostics(
+            nodes=target_nodes,
+            linked_node_keys=linked_node_keys,
+            config=config,
+            profile_by_node=profile_by_node,
+        )
+    )
     diagnostics.extend(threshold_diags)
+    link_migration_suggestions = build_link_migration_suggestions(
+        stale_links=stale_links,
+        candidate_nodes=link_nodes,
+        linked_node_keys=linked_node_keys,
+    )
+    repair_summary = build_repair_summary(
+        nodes=target_nodes,
+        linked_node_keys=linked_node_keys,
+        valid_links=valid_links,
+    )
 
     diagnostics.sort(key=lambda d: (d.file_path, d.line, d.column, d.code))
     error_count = len([d for d in diagnostics if d.severity == "error"])
@@ -263,108 +270,75 @@ def _run_core(
             "covered_nodes": metrics.linked_nodes,
             "schema_checked_files": schema_result.checked_files,
             "schema_matched_files": schema_result.matched_files,
-            "kind_breakdown": kind_breakdown,
+                "kind_breakdown": kind_stats,
+                "profile_breakdown": profile_breakdown(
+                    target_nodes, linked_node_keys, profile_by_node
+                ),
         },
         "metrics": metrics.to_dict(),
+            "profile_metrics": profile_breakdown(target_nodes, linked_node_keys, profile_by_node),
         "diagnostics": [d.to_dict() for d in diagnostics],
         "nodes": [node.to_dict() for node in target_nodes],
         "links_valid": valid_link_reports,
+        "link_migration_suggestions": link_migration_suggestions,
+        "repair_summary": repair_summary,
     }
 
 
-def _compute_metrics(
-    nodes: list[MarkdownNode],
-    linked_node_keys: set[NodeKey],
-    critical_node_keys: set[NodeKey],
-    linked_critical_node_keys: set[NodeKey],
-    tested_node_keys: set[NodeKey],
-) -> CoverageMetrics:
-    total_nodes = len(nodes)
-    critical_nodes = len(critical_node_keys)
-    linked_nodes = len(linked_node_keys)
-    linked_critical_nodes = len(linked_critical_node_keys)
-    tested_nodes = len(tested_node_keys)
-
-    return CoverageMetrics(
-        total_nodes=total_nodes,
-        linked_nodes=linked_nodes,
-        critical_nodes=critical_nodes,
-        linked_critical_nodes=linked_critical_nodes,
-        tested_nodes=tested_nodes,
-        node_linked_percent=_pct(linked_nodes, total_nodes),
-        critical_linked_percent=_pct(linked_critical_nodes, critical_nodes),
-        node_tested_percent=_pct(tested_nodes, total_nodes),
-    )
-
-
-def _threshold_diagnostics(config: LintConfig, metrics: CoverageMetrics) -> list[Diagnostic]:
-    diags: list[Diagnostic] = []
-    if metrics.node_linked_percent < config.thresholds.node_linked_min:
-        diags.append(
-            Diagnostic(
-                code="IWP109",
-                message=(
-                    "NodeLinked% below threshold: "
-                    f"{metrics.node_linked_percent:.2f} < {config.thresholds.node_linked_min:.2f}"
-                ),
-                file_path=config.iwp_root,
-            )
-        )
-    if metrics.critical_linked_percent < config.thresholds.critical_linked_min:
-        diags.append(
-            Diagnostic(
-                code="IWP109",
-                message=(
-                    "CriticalNodeLinked% below threshold: "
-                    f"{metrics.critical_linked_percent:.2f} < {config.thresholds.critical_linked_min:.2f}"
-                ),
-                file_path=config.iwp_root,
-            )
-        )
-    if metrics.node_tested_percent < config.thresholds.node_tested_min:
-        diags.append(
-            Diagnostic(
-                code="IWP109",
-                message=(
-                    "NodeTested% below threshold: "
-                    f"{metrics.node_tested_percent:.2f} < {config.thresholds.node_tested_min:.2f}"
-                ),
-                file_path=config.iwp_root,
-            )
-        )
-    return diags
-
-
-def _pct(num: int, den: int) -> float:
-    if den == 0:
-        return 100.0
-    return round((num / den) * 100, 2)
-
-
-def _kind_breakdown(valid_link_reports: list[dict[str, Any]]) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for item in valid_link_reports:
-        key = str(item["computed_kind"])
-        out[key] = out.get(key, 0) + 1
-    return dict(sorted(out.items()))
-
-
-def print_console_report(report: dict[str, Any]) -> None:
+def print_console_report(
+    report: dict[str, Any],
+    *,
+    min_severity: str = "warning",
+    quiet_warnings: bool = False,
+) -> None:
     summary = report["summary"]
     metrics = report["metrics"]
+    status = "OK"
+    if int(summary["error_count"]) > 0:
+        status = "FAIL"
+    elif int(summary.get("warning_count", 0)) > 0:
+        status = "PASS_WITH_WARNINGS"
     print(
         f"[iwp-lint] mode={report['mode']} errors={summary['error_count']} "
         f"warnings={summary.get('warning_count', 0)} "
-        f"nodes={summary['total_nodes_in_scope']} covered={summary['covered_nodes']}"
+        f"nodes={summary['total_nodes_in_scope']} covered={summary['covered_nodes']} "
+        f"status={status}"
     )
     print(
         f"[iwp-lint] NodeLinked={metrics['node_linked_percent']}% "
         f"CriticalNodeLinked={metrics['critical_linked_percent']}% "
         f"NodeTested={metrics['node_tested_percent']}%"
     )
-    for diag in report["diagnostics"]:
+    for diag in _filter_console_diagnostics(
+        report["diagnostics"],
+        min_severity=min_severity,
+        quiet_warnings=quiet_warnings,
+    ):
         loc = f"{diag['file_path']}:{diag['line']}:{diag['column']}"
-        print(f"{diag['code']} {loc} {diag['message']}")
+        severity_tag = "[E]" if str(diag.get("severity", "error")).lower() == "error" else "[W]"
+        print(f"{severity_tag}[{diag['code']}] {loc} {diag['message']}")
+
+
+def _severity_rank(value: str) -> int:
+    return 1 if value.lower() == "error" else 0
+
+
+def _filter_console_diagnostics(
+    diagnostics: list[dict[str, Any]],
+    *,
+    min_severity: str,
+    quiet_warnings: bool,
+) -> list[dict[str, Any]]:
+    threshold = _severity_rank(min_severity)
+    filtered: list[dict[str, Any]] = []
+    for item in diagnostics:
+        severity = str(item.get("severity", "error")).lower()
+        if quiet_warnings and severity != "error":
+            continue
+        if _severity_rank(severity) < threshold:
+            continue
+        filtered.append(item)
+    return filtered
 
 
 def write_json_report(path: str | None, report: dict[str, Any]) -> None:

@@ -13,6 +13,7 @@ class MarkdownNode:
     section_key: str
     file_type_id: str
     computed_kind: str
+    anchor_level: str = "default"
     is_critical: bool = False
 
     def to_dict(self) -> dict[str, Any]:

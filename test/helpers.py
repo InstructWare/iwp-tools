@@ -11,7 +11,7 @@ from typing import Any
 
 from iwp_lint.config import load_config
 from iwp_lint.parsers.md_parser import parse_markdown_nodes
-from iwp_lint.vcs.snapshot_store import SnapshotStore
+from iwp_lint.vcs.snapshot_store import SnapshotStore, collect_workspace_files
 
 
 def _detect_repo_root() -> Path:
@@ -170,12 +170,16 @@ def assert_build_diff_contract(
     impacted_nodes = intent["impacted_nodes"]
 
     testcase.assertEqual(summary["build_mode"], expected_mode)
-    testcase.assertIn(expected_md_file, changed_md_files)
     testcase.assertEqual(summary["changed_md_count"], len(changed_md_files))
     testcase.assertEqual(summary["impacted_nodes_count"], len(impacted_nodes))
-    testcase.assertGreaterEqual(summary["impacted_nodes_count"], min_impacted_nodes)
+    if expected_mode != "bootstrap_full":
+        testcase.assertIn(expected_md_file, changed_md_files)
+        testcase.assertGreaterEqual(summary["impacted_nodes_count"], min_impacted_nodes)
+        testcase.assertTrue(any(node.get("source_path") == expected_md_file for node in impacted_nodes))
+    else:
+        testcase.assertEqual(changed_md_files, [])
+        testcase.assertEqual(impacted_nodes, [])
     testcase.assertNotIn("compiled_files", compile_payload)
-    testcase.assertTrue(any(node.get("source_path") == expected_md_file for node in impacted_nodes))
     testcase.assertLessEqual(float(metrics.get("node_linked_percent", 0.0)), 100.0)
     testcase.assertLessEqual(float(metrics.get("node_tested_percent", 0.0)), 100.0)
     if expect_gap_errors:
@@ -220,3 +224,19 @@ def latest_snapshot_id(config_path: Path) -> int | None:
     db_path = (config.project_root / config.snapshot_db_file).resolve()
     store = SnapshotStore(db_path)
     return store.latest_snapshot_id()
+
+
+def create_snapshot_baseline(config_path: Path) -> int:
+    config = load_config(str(config_path))
+    db_path = (config.project_root / config.snapshot_db_file).resolve()
+    store = SnapshotStore(db_path)
+    files = collect_workspace_files(
+        project_root=config.project_root,
+        iwp_root=config.iwp_root,
+        iwp_root_path=config.iwp_root_path,
+        code_roots=config.code_roots,
+        include_ext=config.include_ext,
+        code_exclude_globs=config.code_exclude_globs,
+        exclude_markdown_globs=config.schema_exclude_markdown_globs,
+    )
+    return store.create_snapshot(files)

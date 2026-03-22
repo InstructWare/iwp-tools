@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from typing import TypeAlias
 
-from iwp_build.watch import (
+from iwp_build.services.watch import (
     DebouncedSourceQueue,
     has_control_file_changes,
     resolve_markdown_changes,

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from difflib import SequenceMatcher
 from pathlib import Path
 
 from ..parsers.comment_scanner import discover_code_files
@@ -56,6 +56,38 @@ class SnapshotStore:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_snapshot_files_path ON snapshot_files(path)"
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS sessions (
+                        session_id TEXT PRIMARY KEY,
+                        status TEXT NOT NULL,
+                        baseline_id_before INTEGER,
+                        baseline_id_after INTEGER,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        committed_at TEXT,
+                        metadata_json TEXT
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS session_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        session_id TEXT NOT NULL,
+                        event_type TEXT NOT NULL,
+                        payload_json TEXT,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+                    )
+                    """
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id)"
+                )
 
     def create_snapshot(self, files: list[SnapshotFile]) -> int:
         self.ensure()
@@ -97,6 +129,19 @@ class SnapshotStore:
             return None
         return int(row[0])
 
+    def latest_snapshot_info(self) -> dict[str, int | str] | None:
+        self.ensure()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            row = conn.execute(
+                "SELECT id, created_at FROM snapshots ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "snapshot_id": int(row[0]),
+            "created_at": str(row[1]),
+        }
+
     def load_snapshot(self, snapshot_id: int) -> dict[str, SnapshotFile]:
         self.ensure()
         with closing(sqlite3.connect(self.db_path)) as conn:
@@ -120,6 +165,152 @@ class SnapshotStore:
             for (path, kind, mtime_ns, size, digest, content) in rows
         }
 
+    def create_session(
+        self,
+        session_id: str,
+        baseline_id_before: int | None,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        self.ensure()
+        now = datetime.now(timezone.utc).isoformat()
+        metadata_json = json.dumps(metadata or {}, ensure_ascii=False)
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO sessions(
+                        session_id, status, baseline_id_before, baseline_id_after,
+                        created_at, updated_at, committed_at, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (session_id, "open", baseline_id_before, None, now, now, None, metadata_json),
+                )
+
+    def get_session(self, session_id: str) -> dict[str, object] | None:
+        self.ensure()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            row = conn.execute(
+                """
+                SELECT session_id, status, baseline_id_before, baseline_id_after,
+                       created_at, updated_at, committed_at, metadata_json
+                FROM sessions
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "session_id": str(row[0]),
+            "status": str(row[1]),
+            "baseline_id_before": int(row[2]) if row[2] is not None else None,
+            "baseline_id_after": int(row[3]) if row[3] is not None else None,
+            "created_at": str(row[4]),
+            "updated_at": str(row[5]),
+            "committed_at": str(row[6]) if row[6] is not None else None,
+            "metadata": json.loads(row[7]) if row[7] else {},
+        }
+
+    def latest_session(self, *, status: str | None = None) -> dict[str, object] | None:
+        self.ensure()
+        query = """
+            SELECT session_id, status, baseline_id_before, baseline_id_after,
+                   created_at, updated_at, committed_at, metadata_json
+            FROM sessions
+        """
+        params: tuple[object, ...] = ()
+        if status is not None:
+            query += " WHERE status = ?"
+            params = (status,)
+        query += " ORDER BY created_at DESC LIMIT 1"
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            row = conn.execute(query, params).fetchone()
+        if row is None:
+            return None
+        return {
+            "session_id": str(row[0]),
+            "status": str(row[1]),
+            "baseline_id_before": int(row[2]) if row[2] is not None else None,
+            "baseline_id_after": int(row[3]) if row[3] is not None else None,
+            "created_at": str(row[4]),
+            "updated_at": str(row[5]),
+            "committed_at": str(row[6]) if row[6] is not None else None,
+            "metadata": json.loads(row[7]) if row[7] else {},
+        }
+
+    def update_session(
+        self,
+        session_id: str,
+        *,
+        status: str | None = None,
+        baseline_id_after: int | None = None,
+        committed: bool = False,
+    ) -> None:
+        self.ensure()
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with conn:
+                current = conn.execute(
+                    "SELECT status, baseline_id_after FROM sessions WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()
+                if current is None:
+                    raise RuntimeError(f"session not found: {session_id}")
+                next_status = status if status is not None else str(current[0])
+                next_after = baseline_id_after if baseline_id_after is not None else current[1]
+                committed_at = now if committed else None
+                conn.execute(
+                    """
+                    UPDATE sessions
+                    SET status = ?, baseline_id_after = ?, updated_at = ?, committed_at = COALESCE(?, committed_at)
+                    WHERE session_id = ?
+                    """,
+                    (next_status, next_after, now, committed_at, session_id),
+                )
+
+    def append_session_event(
+        self,
+        session_id: str,
+        event_type: str,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        self.ensure()
+        now = datetime.now(timezone.utc).isoformat()
+        payload_json = json.dumps(payload or {}, ensure_ascii=False)
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO session_events(session_id, event_type, payload_json, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (session_id, event_type, payload_json, now),
+                )
+
+    def get_session_events(self, session_id: str) -> list[dict[str, object]]:
+        self.ensure()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            rows = conn.execute(
+                """
+                SELECT id, event_type, payload_json, created_at
+                FROM session_events
+                WHERE session_id = ?
+                ORDER BY id ASC
+                """,
+                (session_id,),
+            ).fetchall()
+        events: list[dict[str, object]] = []
+        for row in rows:
+            events.append(
+                {
+                    "id": int(row[0]),
+                    "event_type": str(row[1]),
+                    "payload": json.loads(row[2]) if row[2] else {},
+                    "created_at": str(row[3]),
+                }
+            )
+        return events
+
 
 def collect_workspace_files(
     project_root: Path,
@@ -127,6 +318,7 @@ def collect_workspace_files(
     iwp_root_path: Path,
     code_roots: list[str],
     include_ext: list[str],
+    code_exclude_globs: list[str] | None = None,
     exclude_markdown_globs: list[str] | None = None,
 ) -> list[SnapshotFile]:
     files: list[SnapshotFile] = []
@@ -136,7 +328,12 @@ def collect_workspace_files(
         project_rel = f"{iwp_root}/{rel}"
         files.append(_to_snapshot_file(abs_path, project_rel, "markdown"))
 
-    for code_path in discover_code_files(project_root, code_roots, include_ext):
+    for code_path in discover_code_files(
+        project_root,
+        code_roots,
+        include_ext,
+        code_exclude_globs,
+    ):
         rel = code_path.relative_to(project_root).as_posix()
         files.append(_to_snapshot_file(code_path, rel, "code"))
 
@@ -144,26 +341,6 @@ def collect_workspace_files(
     for item in files:
         dedup[item.path] = item
     return sorted(dedup.values(), key=lambda item: item.path)
-
-
-def compute_changed_lines(old_text: str, new_text: str) -> set[int]:
-    old_lines = old_text.splitlines()
-    new_lines = new_text.splitlines()
-    matcher = SequenceMatcher(None, old_lines, new_lines)
-    changed: set[int] = set()
-
-    for tag, _, _, j1, j2 in matcher.get_opcodes():
-        if tag == "equal":
-            continue
-        if tag == "delete":
-            anchor = min(max(j1 + 1, 1), max(len(new_lines), 1))
-            changed.add(anchor)
-            continue
-        start = j1 + 1
-        end = max(j2, start)
-        for line_no in range(start, end + 1):
-            changed.add(line_no)
-    return changed
 
 
 def _to_snapshot_file(abs_path: Path, rel_path: str, kind: str) -> SnapshotFile:
@@ -176,5 +353,5 @@ def _to_snapshot_file(abs_path: Path, rel_path: str, kind: str) -> SnapshotFile:
         mtime_ns=int(stat.st_mtime_ns),
         size=int(stat.st_size),
         digest=digest,
-        content=content if kind == "markdown" else None,
+        content=content,
     )

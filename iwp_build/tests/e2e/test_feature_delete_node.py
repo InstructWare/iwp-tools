@@ -59,6 +59,7 @@ class FeatureDeleteNodeBuildE2E(unittest.TestCase):
                     fail_payload,
                     expected_md_file="architecture.md",
                     expect_gap_errors=True,
+                    expected_mode="bootstrap_full",
                 )
 
                 verify_fail = run_build(["verify", "--config", str(config_path)])
@@ -92,6 +93,7 @@ class FeatureDeleteNodeBuildE2E(unittest.TestCase):
                     pass_payload,
                     expected_md_file="architecture.md",
                     expect_gap_errors=False,
+                    expected_mode="bootstrap_full",
                 )
                 self._assert_ok(
                     run_build(["verify", "--config", str(config_path)]),

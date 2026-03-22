@@ -1,20 +1,50 @@
 from __future__ import annotations
 
 import argparse
-import json
-import sys
-import unittest
-from collections.abc import Mapping
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
-from iwp_build.watch import run_watch
-from iwp_lint.api import (
-    compile_context,
-    run_quality_gate,
-    snapshot_action,
-    verify_compiled,
+from .commands.build_args import add_build_parser
+from .commands.option_resolver import (
+    SessionOptions,
+    resolve_build_options,
+    resolve_session_options,
+    resolve_verify_options,
 )
-from iwp_lint.config import load_config
-from iwp_lint.core.engine import print_console_report, run_diff, run_full
+from .commands.session_args import add_session_parser
+from .commands.verify_args import add_verify_parser
+from .commands.watch_args import add_watch_parser
+from .output import render_iwp_diff_text, safe_len, write_json
+from .reconcile import run_session_reconcile
+from .services.build import run_build
+from .services.verify import run_verify
+from .services.watch import run_watch
+
+try:
+    from iwp_lint.api import (
+        compile_context,
+        normalize_annotations,
+        session_audit,
+        session_commit,
+        session_current,
+        session_diff,
+        session_start,
+        verify_compiled,
+    )
+    from iwp_lint.config import load_config
+except ImportError:
+    from ..iwp_lint.api import (
+        compile_context,
+        normalize_annotations,
+        session_audit,
+        session_commit,
+        session_current,
+        session_diff,
+        session_start,
+        verify_compiled,
+    )
+    from ..iwp_lint.config import load_config
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -23,267 +53,336 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", help="Path to .iwp-lint.yaml or .json", default=None)
     sub = parser.add_subparsers(dest="command", required=True)
-
-    build_cmd = sub.add_parser(
-        "build", help="Compile .iwc and compute incremental implementation gap"
-    )
-    build_cmd.add_argument("--config", help="Path to .iwp-lint.yaml or .json", default=None)
-    build_cmd.add_argument(
-        "--mode",
-        choices=["auto", "diff", "full"],
-        default="auto",
-        help="Build mode: auto tries diff first and falls back to full on first run",
-    )
-    build_cmd.add_argument("--json", help="Write build summary JSON to path", default=None)
-    build_cmd.add_argument(
-        "--diff-json",
-        help="Write compact diff payload for agent consumption",
-        default=None,
-    )
-    build_cmd.set_defaults(command="build")
-
-    verify_cmd = sub.add_parser("verify", help="Run compiled check + lint gate (+ tests)")
-    verify_cmd.add_argument("--config", help="Path to .iwp-lint.yaml or .json", default=None)
-    verify_cmd.add_argument("--run-tests", action="store_true", help="Run regression tests")
-    verify_cmd.set_defaults(command="verify")
-
-    watch_cmd = sub.add_parser(
-        "watch", help="Watch markdown changes and rebuild .iwc incrementally"
-    )
-    watch_cmd.add_argument("--config", help="Path to .iwp-lint.yaml or .json", default=None)
-    watch_cmd.add_argument(
-        "--debounce-ms",
-        type=int,
-        default=600,
-        help="Debounce window for change batching",
-    )
-    watch_cmd.add_argument(
-        "--poll-ms",
-        type=int,
-        default=250,
-        help="Polling interval for file change detection",
-    )
-    watch_cmd.add_argument(
-        "--verify",
-        action="store_true",
-        help="Verify compiled artifacts after each build",
-    )
-    watch_cmd.add_argument(
-        "--run-tests",
-        action="store_true",
-        help="Run regression tests after each successful build",
-    )
-    watch_cmd.add_argument(
-        "--once",
-        action="store_true",
-        help="Run one compile cycle and exit",
-    )
-    watch_cmd.set_defaults(command="watch")
-
+    add_build_parser(sub)
+    add_verify_parser(sub)
+    add_watch_parser(sub)
+    add_session_parser(sub)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    config = load_config(args.config)
+    try:
+        parser = build_parser()
+        args = parser.parse_args(argv)
+        config = load_config(args.config)
 
-    if args.command == "build":
-        return _run_build(
-            config=config,
-            mode=args.mode,
-            json_path=args.json,
-            diff_json_path=args.diff_json,
-        )
-    if args.command == "verify":
-        return _run_verify(config, args.run_tests)
-    if args.command == "watch":
-        return run_watch(
-            config=config,
-            config_file=args.config,
-            debounce_ms=args.debounce_ms,
-            poll_ms=args.poll_ms,
-            verify=args.verify,
-            run_tests=args.run_tests,
-            once=args.once,
-            compile_fn=compile_context,
-            verify_fn=verify_compiled,
-        )
-    raise RuntimeError(f"unknown command: {args.command}")
+        if args.command == "build":
+            options = resolve_build_options(args, config=config)
+            return _run_build(
+                config=config,
+                mode=options.mode,
+                json_path=options.json_path,
+                normalize_links=options.normalize_links,
+                build_code_sidecar=options.build_code_sidecar,
+            )
+        if args.command == "verify":
+            options = resolve_verify_options(args, config=config)
+            return _run_verify(
+                config,
+                with_tests=options.with_tests,
+                protocol_only=options.protocol_only,
+                min_severity=options.min_severity,
+                quiet_warnings=options.quiet_warnings,
+            )
+        if args.command == "watch":
+            return run_watch(
+                config=config,
+                config_file=args.config,
+                debounce_ms=args.debounce_ms,
+                poll_ms=args.poll_ms,
+                verify=args.verify,
+                run_tests=args.run_tests,
+                once=args.once,
+                compile_fn=compile_context,
+                verify_fn=verify_compiled,
+            )
+        if args.command == "session":
+            options = resolve_session_options(args, config=config)
+            return _run_session(config=config, options=options)
+        raise RuntimeError(f"unknown command: {args.command}")
+    except RuntimeError as exc:
+        print(f"[iwp-build] error: {exc}")
+        return 1
 
 
 def _run_build(
     config,
     mode: str,
     json_path: str | None,
-    diff_json_path: str | None = None,
+    normalize_links: bool = False,
+    build_code_sidecar: bool = True,
 ) -> int:
-    compile_result = compile_context(config)
-    build_mode = mode
-    needs_bootstrap_init = False
-    intent = {
-        "changed_files": [],
-        "changed_md_files": [],
-        "changed_code_files": [],
-        "changed_count": 0,
-        "impacted_nodes": [],
-    }
-
-    if mode in {"auto", "diff"}:
-        try:
-            intent = snapshot_action(config, "diff")
-            gap_report = run_diff(config, None, None)
-            build_mode = "diff"
-        except RuntimeError as exc:
-            if mode == "diff":
-                raise
-            if "baseline not found" not in str(exc):
-                raise
-            gap_report = run_full(config)
-            build_mode = "bootstrap_full"
-            needs_bootstrap_init = True
-    else:
-        gap_report = run_full(config)
-        build_mode = "full"
-
-    gap_error_count = int(gap_report["summary"]["error_count"])
-    baseline_bootstrapped = needs_bootstrap_init and gap_error_count == 0
-    summary = {
-        "build_mode": build_mode,
-        "baseline_bootstrapped": baseline_bootstrapped,
-        "compiled_count": int(compile_result.get("compiled_count", 0)),
-        "removed_count": int(compile_result.get("removed_count", 0)),
-        "changed_count": int(intent.get("changed_count", 0)),
-        "changed_md_count": _safe_len(intent.get("changed_md_files")),
-        "impacted_nodes_count": _safe_len(intent.get("impacted_nodes")),
-        "gap_error_count": gap_error_count,
-        "gap_warning_count": int(gap_report["summary"]["warning_count"]),
-    }
-    print(
-        "[iwp-build] build "
-        f"mode={summary['build_mode']} "
-        f"compiled={summary['compiled_count']} removed={summary['removed_count']} "
-        f"changed={summary['changed_count']} impacted_nodes={summary['impacted_nodes_count']} "
-        f"gap_errors={summary['gap_error_count']}"
+    return run_build(
+        config=config,
+        mode=mode,
+        json_path=json_path,
+        normalize_links=normalize_links,
+        emit_code_sidecar=build_code_sidecar,
     )
-    print_console_report(gap_report)
-    full_payload = {
-        "summary": summary,
-        "compile": compile_result,
-        "intent_diff": intent,
-        "gap_report": gap_report,
-    }
-    written_json_path = _write_json(
-        json_path,
-        full_payload,
-    )
-    if written_json_path is not None:
-        print(
-            "[iwp-build] build json "
-            f"path={written_json_path} "
-            f"changed_md={summary['changed_md_count']} "
-            f"impacted_nodes={summary['impacted_nodes_count']} "
-            f"gap_errors={summary['gap_error_count']}"
-        )
-    written_diff_json_path = _write_json(
-        diff_json_path,
-        _to_compact_diff_payload(summary=summary, intent=intent, gap_report=gap_report),
-    )
-    if written_diff_json_path is not None:
-        print(
-            "[iwp-build] build diff json "
-            f"path={written_diff_json_path} "
-            f"changed_md={summary['changed_md_count']} "
-            f"impacted_nodes={summary['impacted_nodes_count']} "
-            f"gap_errors={summary['gap_error_count']}"
-        )
-
-    if gap_error_count > 0:
-        print("[iwp-build] build failed; keep previous baseline unchanged")
-        return 1
-
-    # Build completion is the manual checkpoint; only commit snapshot when gap checks pass.
-    if needs_bootstrap_init:
-        snapshot_action(config, "init")
-    else:
-        snapshot_action(config, "update")
-    return 0
 
 
-def _run_verify(config, run_tests: bool) -> int:
-    compiled = verify_compiled(config)
-    if not bool(compiled.get("ok", False)):
-        print(f"[iwp-build] verify compiled checked={compiled.get('checked_sources', 0)} ok=False")
-        return 1
-
-    gate = run_quality_gate(config)
-    print_console_report(gate["lint_report"])
-    if gate["lint_exit_code"] != 0:
-        return 1
-
-    if run_tests:
-        suite = unittest.defaultTestLoader.loadTestsFromName("iwp_lint.tests.test_regression")
-        result = unittest.TextTestRunner(stream=sys.stdout, verbosity=1).run(suite)
-        if not result.wasSuccessful():
-            return 1
-
-    print("[iwp-build] verify ok")
-    return 0
-
-
-def _safe_len(value: object) -> int:
-    return len(value) if isinstance(value, list) else 0
-
-
-def _to_compact_diff_payload(
+def _run_verify(
+    config,
     *,
-    summary: dict[str, object],
-    intent: dict[str, object],
-    gap_report: dict[str, object],
-) -> dict[str, object]:
-    raw_gap_summary = gap_report.get("summary", {})
-    gap_summary: Mapping[str, object]
-    if isinstance(raw_gap_summary, Mapping):
-        gap_summary = raw_gap_summary
-    else:
-        gap_summary = {}
+    with_tests: bool,
+    protocol_only: bool = False,
+    min_severity: str = "warning",
+    quiet_warnings: bool = False,
+) -> int:
+    return run_verify(
+        config=config,
+        with_tests=with_tests,
+        protocol_only=protocol_only,
+        min_severity=min_severity,
+        quiet_warnings=quiet_warnings,
+    )
+
+
+@dataclass(frozen=True)
+class SessionActionContext:
+    config: Any
+    options: SessionOptions
+
+
+@dataclass(frozen=True)
+class SessionActionResult:
+    payload: dict[str, object]
+    exit_code: int | None = None
+    skip_post_processing: bool = False
+
+
+SessionHandler = Callable[[SessionActionContext], SessionActionResult]
+
+
+def _run_session(config: Any, options: SessionOptions) -> int:
+    action = options.action
+    handlers = _build_session_handlers()
+    handler = handlers.get(action)
+    if handler is None:
+        raise RuntimeError(f"unknown session action: {action}")
+    result = handler(SessionActionContext(config=config, options=options))
+    if result.skip_post_processing:
+        return result.exit_code if result.exit_code is not None else 0
+    payload = result.payload
+    written = None
+    should_write_json = bool(options.json_path) or options.output_format in {"json", "both"}
+    if should_write_json:
+        write_target = options.json_path or f"out/session-{action}.json"
+        written = write_json(write_target, payload)
+    print(
+        "[iwp-build] session "
+        f"action={action} "
+        f"id={payload.get('session_id', options.session_id)} "
+        f"status={payload.get('status', payload.get('session_status', 'n/a'))}"
+    )
+    if action == "diff":
+        if options.output_format in {"text", "both"}:
+            max_text_lines = int(getattr(config.session, "max_text_lines", 200))
+            print(render_iwp_diff_text(payload, max_lines=max_text_lines))
+        print(
+            "[iwp-build] session diff "
+            f"changed={safe_len(payload.get('changed_files'))} "
+            f"changed_md={safe_len(payload.get('changed_md_files'))} "
+            f"changed_code={safe_len(payload.get('changed_code_files'))} "
+            f"impacted_nodes={safe_len(payload.get('impacted_nodes'))}"
+        )
+    if action == "current":
+        has_open = bool(payload.get("has_open_session", False))
+        print(f"[iwp-build] session current has_open_session={has_open}")
+    if written:
+        print(f"[iwp-build] session json path={written}")
+    if action == "commit" and str(payload.get("status")) != "committed":
+        return 1
+    return result.exit_code if result.exit_code is not None else 0
+
+
+def _build_session_handlers() -> dict[str, SessionHandler]:
     return {
-        "summary": {
-            "build_mode": summary.get("build_mode"),
-            "changed_md_count": summary.get("changed_md_count"),
-            "impacted_nodes_count": summary.get("impacted_nodes_count"),
-            "gap_error_count": summary.get("gap_error_count"),
-            "gap_warning_count": summary.get("gap_warning_count"),
-        },
-        "intent_diff": {
-            "changed_md_files": intent.get("changed_md_files", []),
-            "impacted_nodes": intent.get("impacted_nodes", []),
-        },
-        "gap_report": {
-            "mode": gap_report.get("mode"),
-            "summary": {
-                "error_count": gap_summary.get("error_count", 0),
-                "warning_count": gap_summary.get("warning_count", 0),
-                "total_nodes_in_scope": gap_summary.get("total_nodes_in_scope", 0),
-                "total_nodes_all": gap_summary.get("total_nodes_all", 0),
-                "covered_nodes": gap_summary.get("covered_nodes", 0),
-            },
-            "diagnostics": gap_report.get("diagnostics", []),
-            "nodes": gap_report.get("nodes", []),
-        },
+        "start": _handle_session_start,
+        "current": _handle_session_current,
+        "diff": _handle_session_diff,
+        "commit": _handle_session_commit,
+        "audit": _handle_session_audit,
+        "reconcile": _handle_session_reconcile,
+        "normalize_links": _handle_session_normalize_links,
     }
 
 
-def _write_json(path: str | None, payload: dict[str, object]) -> str | None:
-    if not path:
-        return None
-    from pathlib import Path
+def _handle_session_start(ctx: SessionActionContext) -> SessionActionResult:
+    config = ctx.config
+    options = ctx.options
+    if options.if_missing:
+        current = session_current(config=config)
+        if bool(current.get("has_open_session", False)):
+            session = current.get("session", {})
+            if not isinstance(session, dict):
+                raise RuntimeError("current session payload is invalid")
+            payload = dict(session)
+            payload["reused_current"] = True
+            payload["status"] = "reused"
+            return SessionActionResult(payload=payload)
+        payload = session_start(config=config, metadata={"origin": "iwp-build session start"})
+        payload["reused_current"] = False
+        return SessionActionResult(payload=payload)
+    payload = session_start(config=config, metadata={"origin": "iwp-build session start"})
+    return SessionActionResult(payload=payload)
 
-    out_path = Path(path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    return out_path.as_posix()
 
+def _handle_session_current(ctx: SessionActionContext) -> SessionActionResult:
+    payload = session_current(config=ctx.config)
+    return SessionActionResult(payload=payload)
+
+
+def _handle_session_diff(ctx: SessionActionContext) -> SessionActionResult:
+    config = ctx.config
+    options = ctx.options
+    resolved_session_id = _resolve_session_id(
+        config=config,
+        session_id=options.session_id,
+        action="diff",
+        auto_start_session=options.auto_start_session,
+    )
+    payload = session_diff(
+        config=config,
+        session_id=resolved_session_id,
+        code_diff_level=options.code_diff_level,
+        code_diff_context_lines=options.code_diff_context_lines,
+        code_diff_max_chars=options.code_diff_max_chars,
+        node_severity=options.node_severity,
+        node_file_types=options.node_file_type_ids,
+        node_anchor_levels=options.node_anchor_levels,
+        node_kind_prefixes=options.node_kind_prefixes,
+        critical_only=options.critical_only,
+        markdown_excerpt_max_chars=options.markdown_excerpt_max_chars,
+        include_baseline_gaps=options.include_baseline_gaps,
+        focus_path=options.focus_path,
+        max_gap_items=options.max_gap_items,
+    )
+    if options.debug_raw:
+        payload["raw"] = dict(payload)
+    return SessionActionResult(payload=payload)
+
+
+def _handle_session_commit(ctx: SessionActionContext) -> SessionActionResult:
+    config = ctx.config
+    options = ctx.options
+    resolved_session_id = _resolve_session_id(
+        config=config,
+        session_id=options.session_id,
+        action="commit",
+        auto_start_session=False,
+    )
+    payload = session_commit(
+        config=config,
+        session_id=resolved_session_id,
+        allow_stale_sidecar=options.allow_stale_sidecar,
+        code_diff_level=options.code_diff_level,
+        code_diff_context_lines=options.code_diff_context_lines,
+        code_diff_max_chars=options.code_diff_max_chars,
+        node_severity=options.node_severity,
+        node_file_types=options.node_file_type_ids,
+        node_anchor_levels=options.node_anchor_levels,
+        node_kind_prefixes=options.node_kind_prefixes,
+        critical_only=options.critical_only,
+        markdown_excerpt_max_chars=options.markdown_excerpt_max_chars,
+        include_evidence=bool(options.evidence_json_path),
+    )
+    if options.evidence_json_path and isinstance(payload.get("evidence"), dict):
+        written_evidence = write_json(options.evidence_json_path, payload["evidence"])
+        if written_evidence:
+            print(f"[iwp-build] session evidence json path={written_evidence}")
+    return SessionActionResult(payload=payload)
+
+
+def _handle_session_audit(ctx: SessionActionContext) -> SessionActionResult:
+    options = ctx.options
+    if not options.session_id:
+        raise RuntimeError("--session-id is required for session audit")
+    payload = session_audit(config=ctx.config, session_id=options.session_id)
+    return SessionActionResult(payload=payload)
+
+
+def _handle_session_reconcile(ctx: SessionActionContext) -> SessionActionResult:
+    config = ctx.config
+    options = ctx.options
+    reconcile_json_path = options.json_path
+    if options.output_format in {"json", "both"} and not reconcile_json_path:
+        reconcile_json_path = "out/session-reconcile.json"
+    exit_code, payload = run_session_reconcile(
+        config=config,
+        session_id=options.session_id,
+        json_path=reconcile_json_path,
+        normalize_links=options.normalize_links,
+        code_diff_level=options.code_diff_level,
+        code_diff_context_lines=options.code_diff_context_lines,
+        code_diff_max_chars=options.code_diff_max_chars,
+        node_severity=options.node_severity,
+        node_file_types=options.node_file_type_ids,
+        node_anchor_levels=options.node_anchor_levels,
+        node_kind_prefixes=options.node_kind_prefixes,
+        critical_only=options.critical_only,
+        markdown_excerpt_max_chars=options.markdown_excerpt_max_chars,
+        output_format=options.output_format,
+        debug_raw=options.debug_raw,
+        auto_start_session=options.auto_start_session,
+        max_diagnostics=options.max_diagnostics,
+        min_severity=options.min_severity,
+        quiet_warnings=options.quiet_warnings,
+        suggest_fixes=options.suggest_fixes,
+        warning_top_n=options.warning_top_n,
+        auto_build_sidecar=options.auto_build_sidecar,
+    )
+    print(
+        "[iwp-build] session "
+        f"action={options.action} id={payload.get('session_id', options.session_id)} status={payload.get('status', 'n/a')}"
+    )
+    return SessionActionResult(payload=payload, exit_code=exit_code, skip_post_processing=True)
+
+
+def _handle_session_normalize_links(ctx: SessionActionContext) -> SessionActionResult:
+    normalize = normalize_annotations(config=ctx.config, write=True)
+    payload = {
+        "action": "normalize_links",
+        "status": "ok",
+        "normalize": normalize,
+    }
+    return SessionActionResult(payload=payload)
+
+
+def _resolve_session_id(
+    *,
+    config,
+    session_id: str | None,
+    action: str,
+    auto_start_session: bool = False,
+) -> str:
+    if isinstance(session_id, str) and session_id.strip():
+        return session_id.strip()
+    current = session_current(config=config)
+    if bool(current.get("has_open_session", False)):
+        session = current.get("session")
+        if isinstance(session, dict):
+            resolved = session.get("session_id")
+            if isinstance(resolved, str) and resolved.strip():
+                return resolved
+    if auto_start_session and action in {"diff", "reconcile"}:
+        started = session_start(config=config, metadata={"origin": f"iwp-build session {action} auto-start"})
+        resolved = str(started.get("session_id", "")).strip() if isinstance(started, dict) else ""
+        if resolved:
+            print(f"[iwp-build] auto-started session id={resolved} for action={action}")
+            return resolved
+    commands = [
+        "iwp-build session start --config <cfg>",
+        "iwp-build session current --config <cfg>",
+        "iwp-build session diff --config <cfg> --preset agent-default",
+        "iwp-build session reconcile --config <cfg> --preset agent-default",
+    ]
+    command_lines = "\n".join(f"- {item}" for item in commands)
+    raise RuntimeError(
+        f"--session-id is required for session {action} when no open session exists\n"
+        "next steps:\n"
+        f"{command_lines}"
+    )
 
 if __name__ == "__main__":
     raise SystemExit(main())

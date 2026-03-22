@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -9,6 +10,9 @@ from ..parsers.markdown_outline import extract_outline
 from .schema_loader import load_schema_profile
 from .schema_models import FileTypeSchema, SchemaProfile
 from .schema_semantics import match_file_type, resolve_section_keys
+
+LIST_ITEM_RE = re.compile(r"^\s*-\s+(.*)$")
+TEXT_MARKER_RE = re.compile(r"^\[text\]\s*:?\s*(.*)$")
 
 
 @dataclass(frozen=True)
@@ -89,6 +93,7 @@ def _validate_one_file(
         )
 
     allowed_keys = {item.key for item in file_type_schema.sections}
+    allow_unknown_sections = file_type_schema.allow_unknown_sections
     required_keys = {item.key for item in file_type_schema.sections if item.required}
     declared_i18n_keys = set(profile.section_i18n.keys())
     for section_key in sorted(allowed_keys):
@@ -118,31 +123,38 @@ def _validate_one_file(
             )
             continue
         if not resolved:
-            diagnostics.append(
-                Diagnostic(
-                    code="IWP202",
-                    message=f"Unknown section for file type {file_type_schema.id}: {section.title}",
-                    file_path=rel_path,
-                    line=section.line,
-                    severity=_unknown_severity(profile, mode),
+            if not allow_unknown_sections:
+                allowed_section_hint = _allowed_section_hint(file_type_schema, profile)
+                diagnostics.append(
+                    Diagnostic(
+                        code="IWP202",
+                        message=(
+                            f'Unknown section "{section.title}" for file type {file_type_schema.id}. '
+                            f"{allowed_section_hint}"
+                        ),
+                        file_path=rel_path,
+                        line=section.line,
+                        severity=_unknown_severity(profile, mode),
+                    )
                 )
-            )
             continue
 
         section_key = resolved[0]
         if section_key not in allowed_keys:
-            diagnostics.append(
-                Diagnostic(
-                    code="IWP202",
-                    message=(
-                        f"Illegal section for file type {file_type_schema.id}: "
-                        f"{section.title} ({section_key})"
-                    ),
-                    file_path=rel_path,
-                    line=section.line,
-                    severity=_unknown_severity(profile, mode),
+            if not allow_unknown_sections:
+                allowed_section_hint = _allowed_section_hint(file_type_schema, profile)
+                diagnostics.append(
+                    Diagnostic(
+                        code="IWP202",
+                        message=(
+                            f'Illegal section "{section.title}" ({section_key}) for file type '
+                            f"{file_type_schema.id}. {allowed_section_hint}"
+                        ),
+                        file_path=rel_path,
+                        line=section.line,
+                        severity=_unknown_severity(profile, mode),
+                    )
                 )
-            )
             continue
         found_keys.add(section_key)
 
@@ -156,6 +168,7 @@ def _validate_one_file(
                 )
             )
 
+    diagnostics.extend(_validate_text_marker_usage(file_path, rel_path, profile))
     return diagnostics
 
 
@@ -176,3 +189,69 @@ def _is_excluded_path(rel_path: str, patterns: list[str]) -> bool:
         if posix.match(pattern) or fnmatch.fnmatch(rel_path, pattern):
             return True
     return False
+
+
+def _validate_text_marker_usage(
+    file_path: Path, rel_path: str, profile: SchemaProfile
+) -> list[Diagnostic]:
+    if not profile.text_marker_enabled:
+        return []
+    token = profile.text_marker_token.strip()
+    if token != "[text]":
+        return []
+
+    diagnostics: list[Diagnostic] = []
+    allowed_sections = set(profile.text_marker_allowed_sections)
+    lines = file_path.read_text(encoding="utf-8").splitlines()
+    current_section_key = "document"
+    for line_no, line in enumerate(lines, start=1):
+        heading_match = re.match(r"^##\s+(.+?)\s*$", line)
+        if heading_match:
+            resolved = resolve_section_keys(heading_match.group(1).strip(), profile.section_i18n)
+            current_section_key = resolved[0] if len(resolved) == 1 else "unknown_section"
+            continue
+        list_match = LIST_ITEM_RE.match(line)
+        if not list_match:
+            continue
+        item_text = list_match.group(1).strip()
+        if not item_text.startswith("["):
+            continue
+        if not TEXT_MARKER_RE.match(item_text):
+            diagnostics.append(
+                Diagnostic(
+                    code="IWP204",
+                    message="Invalid marker syntax. Only `[text]` is supported.",
+                    file_path=rel_path,
+                    line=line_no,
+                )
+            )
+            continue
+        if allowed_sections and current_section_key not in allowed_sections:
+            diagnostics.append(
+                Diagnostic(
+                    code="IWP204",
+                    message=(
+                        "`[text]` marker is not allowed in this section: "
+                        f"{current_section_key}"
+                    ),
+                    file_path=rel_path,
+                    line=line_no,
+                )
+            )
+    return diagnostics
+
+
+def _allowed_section_hint(file_type_schema: FileTypeSchema, profile: SchemaProfile) -> str:
+    labels = [_section_label(item.key, profile) for item in file_type_schema.sections]
+    if not labels:
+        return "Allowed: (none)"
+    return f"Allowed: {', '.join(labels)}"
+
+
+def _section_label(section_key: str, profile: SchemaProfile) -> str:
+    locales = profile.section_i18n.get(section_key, {})
+    for locale in sorted(locales.keys()):
+        titles = locales.get(locale) or []
+        if titles:
+            return str(titles[0])
+    return section_key

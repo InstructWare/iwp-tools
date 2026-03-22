@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from ..versioning import NODE_REGISTRY_FORMAT_VERSION
+
 
 def normalize_text(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", value).casefold()
@@ -49,33 +51,37 @@ class NodeRegistry:
         self._entries: list[dict[str, Any]] = []
         self._exact_index: dict[str, list[dict[str, Any]]] = {}
         self._pool_index: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
-        self._assigned_uids: set[str] = set()
+        self._assigned_stable_keys: set[str] = set()
         self._current_entries: dict[str, dict[str, Any]] = {}
+        self._loaded_stable_keys: set[str] = set()
         self._load()
 
     def assign_uid(self, signature: NodeSignature, override_uid: str | None = None) -> str:
         if override_uid:
-            return self._reserve(override_uid, signature)
+            return self._reserve_stable_key(override_uid, signature)
 
         exact_key = signature.canonical_key()
         exact_candidates = self._exact_index.get(exact_key, [])
         for item in exact_candidates:
-            uid = str(item.get("uid", ""))
-            if uid and uid not in self._assigned_uids:
-                return self._reserve(uid, signature)
+            stable_key = str(item.get("stable_key", ""))
+            if stable_key and stable_key not in self._assigned_stable_keys:
+                return self._reserve_stable_key(stable_key, signature)
 
-        fuzzy_uid = self._match_fuzzy_uid(signature)
-        if fuzzy_uid:
-            return self._reserve(fuzzy_uid, signature)
+        fuzzy_stable_key = self._match_fuzzy_stable_key(signature)
+        if fuzzy_stable_key:
+            return self._reserve_stable_key(fuzzy_stable_key, signature)
 
-        return self._reserve(self._new_uid(), signature)
+        return self._reserve_stable_key(self._new_stable_key(signature), signature)
 
     def flush(self) -> None:
         payload = {
-            "version": 1,
+            "version": NODE_REGISTRY_FORMAT_VERSION,
             "entries": sorted(
                 self._current_entries.values(),
-                key=lambda item: (str(item["signature"]["source_path"]), str(item["uid"])),
+                key=lambda item: (
+                    str(item["signature"]["source_path"]),
+                    str(item["uid"]),
+                ),
             ),
         }
         self.registry_path.parent.mkdir(parents=True, exist_ok=True)
@@ -84,23 +90,30 @@ class NodeRegistry:
             encoding="utf-8",
         )
 
-    def _reserve(self, uid: str, signature: NodeSignature) -> str:
-        self._assigned_uids.add(uid)
-        self._current_entries[uid] = {
-            "uid": uid,
+    def _reserve_stable_key(self, stable_key: str, signature: NodeSignature) -> str:
+        self._assigned_stable_keys.add(stable_key)
+        self._current_entries[stable_key] = {
+            "uid": stable_key,
+            "stable_key": stable_key,
             "signature_key": signature.canonical_key(),
             "signature": signature.to_dict(),
         }
-        return uid
+        return stable_key
 
-    def _match_fuzzy_uid(self, signature: NodeSignature) -> str | None:
+    def set_canonical_uid(self, stable_key: str, canonical_uid: str) -> None:
+        entry = self._current_entries.get(stable_key)
+        if not entry:
+            return
+        entry["uid"] = canonical_uid
+
+    def _match_fuzzy_stable_key(self, signature: NodeSignature) -> str | None:
         pool_key = (signature.source_path, signature.section_key, signature.node_type)
         candidates = self._pool_index.get(pool_key, [])
-        best_uid: str | None = None
+        best_stable_key: str | None = None
         best_score = 0.0
         for item in candidates:
-            uid = str(item.get("uid", ""))
-            if not uid or uid in self._assigned_uids:
+            stable_key = str(item.get("stable_key", ""))
+            if not stable_key or stable_key in self._assigned_stable_keys:
                 continue
             candidate_sig = item.get("signature", {})
             anchor_score = _sim(signature.anchor_text, str(candidate_sig.get("anchor_text", "")))
@@ -108,8 +121,8 @@ class NodeRegistry:
             score = (0.8 * anchor_score) + (0.2 * parent_score)
             if score > best_score:
                 best_score = score
-                best_uid = uid
-        return best_uid if best_score >= 0.84 else None
+                best_stable_key = stable_key
+        return best_stable_key if best_score >= 0.84 else None
 
     def _load(self) -> None:
         if not self.registry_path.exists():
@@ -126,7 +139,7 @@ class NodeRegistry:
                 continue
             uid = str(item.get("uid", "")).strip()
             signature = item.get("signature")
-            if not uid or not isinstance(signature, dict):
+            if not isinstance(signature, dict):
                 continue
             required_keys = {
                 "source_path",
@@ -138,6 +151,9 @@ class NodeRegistry:
             }
             if not required_keys.issubset(signature.keys()):
                 continue
+            stable_key = self._normalize_loaded_stable_key(item, uid, signature)
+            if not stable_key:
+                continue
             signature_obj = NodeSignature(
                 source_path=str(signature["source_path"]),
                 file_type_id=str(signature["file_type_id"]),
@@ -147,7 +163,8 @@ class NodeRegistry:
                 anchor_text=str(signature["anchor_text"]),
             )
             entry = {
-                "uid": uid,
+                "uid": uid or stable_key,
+                "stable_key": stable_key,
                 "signature_key": signature_obj.canonical_key(),
                 "signature": signature_obj.to_dict(),
             }
@@ -159,11 +176,24 @@ class NodeRegistry:
                 signature_obj.node_type,
             )
             self._pool_index.setdefault(pool_key, []).append(entry)
+            self._loaded_stable_keys.add(stable_key)
+
+    def _normalize_loaded_stable_key(
+        self,
+        item: dict[str, Any],
+        uid: str,
+        signature: dict[str, Any],
+    ) -> str:
+        candidate = str(item.get("stable_key", "")).strip()
+        if not candidate:
+            return ""
+        if candidate in self._loaded_stable_keys:
+            candidate = sha1(f"{candidate}:{uid}".encode()).hexdigest()
+        return candidate
 
     @staticmethod
-    def _new_uid() -> str:
-        # Keep node IDs short and protocol-compatible: lowercase + dot + hex.
-        return f"n.{uuid4().hex[:16]}"
+    def _new_stable_key(signature: NodeSignature) -> str:
+        return sha1(f"{signature.canonical_key()}:{uuid4().hex}".encode()).hexdigest()
 
 
 def build_signature(
@@ -191,3 +221,44 @@ def _sim(a: str, b: str) -> float:
     if not a or not b:
         return 0.0
     return SequenceMatcher(None, a, b).ratio()
+
+
+def build_short_node_ids_by_source(
+    stable_keys_by_source: dict[str, list[str]],
+    min_length: int = 4,
+    reserved_ids_by_source: dict[str, set[str]] | None = None,
+) -> dict[tuple[str, str], str]:
+    out: dict[tuple[str, str], str] = {}
+    min_len = max(1, int(min_length))
+
+    for source_path, stable_keys in stable_keys_by_source.items():
+        reserved_ids = reserved_ids_by_source.get(source_path, set()) if reserved_ids_by_source else set()
+        unique_keys = sorted(set(stable_keys))
+        hashed_values = {key: sha1(key.encode("utf-8")).hexdigest() for key in unique_keys}
+        for key in unique_keys:
+            key_hash = hashed_values[key]
+            target_len = _shortest_unique_prefix_len(
+                value=key_hash,
+                values=list(hashed_values.values()),
+                min_len=min_len,
+                reserved_ids=reserved_ids,
+            )
+            resolved = f"n.{key_hash[:target_len]}"
+            out[(source_path, key)] = resolved
+            reserved_ids.add(resolved)
+    return out
+
+
+def _shortest_unique_prefix_len(
+    value: str,
+    values: list[str],
+    min_len: int,
+    reserved_ids: set[str],
+) -> int:
+    max_len = max([len(value), *[len(item) for item in values]])
+    for size in range(min_len, max_len + 1):
+        prefix = value[:size]
+        collisions = [item for item in values if item.startswith(prefix)]
+        if len(collisions) == 1 and f"n.{prefix}" not in reserved_ids:
+            return size
+    return len(value)

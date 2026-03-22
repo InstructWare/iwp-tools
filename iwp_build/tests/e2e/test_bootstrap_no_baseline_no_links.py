@@ -67,9 +67,9 @@ class BootstrapNoBaselineNoLinksBuildE2E(unittest.TestCase):
                 self._assert_ok(pass_result, f"bootstrap after link patch ({profile})")
                 pass_payload = read_json(out_dir / "build_pass.json")
                 self.assertEqual(pass_payload["summary"]["build_mode"], "bootstrap_full")
-                self.assertTrue(pass_payload["summary"]["baseline_bootstrapped"])
+                self.assertFalse(pass_payload["summary"]["baseline_bootstrapped"])
                 self.assertEqual(pass_payload["summary"]["gap_error_count"], 0)
-                self.assertIsNotNone(latest_snapshot_id(config_path))
+                self.assertIsNone(latest_snapshot_id(config_path))
                 self._assert_ok(
                     run_build(["verify", "--config", str(config_path)]),
                     f"verify after bootstrap ({profile})",
