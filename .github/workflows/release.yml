@@ -73,3 +73,64 @@ jobs:
           path: dist
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  release-assets:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+      - name: Generate checksums and manifest
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          dist_dir = Path("dist")
+          files = sorted([p for p in dist_dir.glob("*") if p.is_file()])
+          if not files:
+              raise SystemExit("no dist artifacts found")
+          checksum_lines = []
+          assets = []
+          for item in files:
+              digest = hashlib.sha256(item.read_bytes()).hexdigest()
+              checksum_lines.append(f"{digest}  {item.name}")
+              assets.append(
+                  {
+                      "file_name": item.name,
+                      "sha256": digest,
+                      "size": item.stat().st_size,
+                  }
+              )
+          (dist_dir / "checksums.sha256").write_text("\n".join(checksum_lines) + "\n", encoding="utf-8")
+          manifest = {
+              "schema_version": "1.0.0",
+              "release_tag": "${{ github.ref_name }}",
+              "generated_at": datetime.now(timezone.utc).isoformat(),
+              "assets": assets,
+          }
+          (dist_dir / "release-manifest.json").write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Publish GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: |
+            dist/*
+            dist/checksums.sha256
+            dist/release-manifest.json
+          fail_on_unmatched_files: true
+          generate_release_notes: true

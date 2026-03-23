@@ -104,11 +104,51 @@ jobs:
 
           echo "Packaged archives:"
           ls -l packaged
+      - name: Generate checksums and manifest
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          packed_dir = Path("packaged")
+          archives = sorted(packed_dir.glob("instructware-tools-*.zip"))
+          if not archives:
+              raise SystemExit("no packaged archives found")
+          checksum_lines = []
+          assets = []
+          for archive in archives:
+              digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+              checksum_lines.append(f"{digest}  {archive.name}")
+              assets.append(
+                  {
+                      "file_name": archive.name,
+                      "sha256": digest,
+                      "size": archive.stat().st_size,
+                  }
+              )
+          (packed_dir / "checksums.sha256").write_text("\n".join(checksum_lines) + "\n", encoding="utf-8")
+          manifest = {
+              "schema_version": "1.0.0",
+              "release_tag": "${{ github.ref_name }}",
+              "generated_at": datetime.now(timezone.utc).isoformat(),
+              "assets": assets,
+          }
+          (packed_dir / "release-manifest.json").write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          files: packaged/*.zip
+          files: |
+            packaged/*.zip
+            packaged/checksums.sha256
+            packaged/release-manifest.json
           fail_on_unmatched_files: true
           generate_release_notes: true
