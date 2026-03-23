@@ -23,13 +23,13 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@v4
       - name: Sync dependencies
-        run: uv sync --group dev
+        run: uv sync --group dev --frozen
       - name: Ruff lint
         run: uv run ruff check .
       - name: Ruff format check
         run: uv run ruff format --check .
       - name: Pyright
-        run: uv run pyright iwp_lint iwp_build test
+        run: uv run python -m pyright iwp_lint iwp_build test
       - name: Regression tests
         run: uv run python -m unittest iwp_lint.tests.test_regression
       - name: Build e2e tests

@@ -65,5 +65,8 @@ ignore = ["E501"]
 quote-style = "double"
 indent-style = "space"
 
+[tool.pyright]
+pythonVersion = "3.11"
+
 [tool.hatch.version]
 source = "vcs"

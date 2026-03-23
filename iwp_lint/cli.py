@@ -5,7 +5,7 @@ import json
 import sys
 from collections.abc import Mapping
 from difflib import get_close_matches
-from typing import Any
+from typing import Any, NoReturn
 
 from .config import load_config
 from .core.engine import print_console_report, run_diff, run_full, run_schema, write_json_report
@@ -21,12 +21,12 @@ from .core.node_catalog import (
 
 
 class _LintArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> None:
+    def error(self, message: str) -> NoReturn:
         enriched = message
         suggestion = _command_hint_from_message(message)
         if suggestion:
             enriched = f"{message}\n[iwp-lint] {suggestion}"
-        super().error(enriched)
+        return super().error(enriched)
 
 
 def build_parser() -> argparse.ArgumentParser:
