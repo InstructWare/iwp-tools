@@ -30,7 +30,30 @@ class FileTypeSchema:
             id=str(raw["id"]),
             path_patterns=[str(item) for item in raw.get("path_patterns", [])],
             sections=[SectionSpec.from_dict(item) for item in raw.get("sections", [])],
-            allow_unknown_sections=bool(raw.get("allow_unknown_sections", False)),
+            allow_unknown_sections=bool(raw.get("allow_unknown_sections", True)),
+        )
+
+
+@dataclass(frozen=True)
+class AuthoringAliasSpec:
+    source_file_type_id: str
+    source_section_key: str
+    target_file_type_id: str
+    target_section_key: str
+    labels: list[str]
+    title_aliases: list[str]
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> AuthoringAliasSpec:
+        labels = [str(item) for item in raw.get("labels", []) if str(item).strip()]
+        title_aliases = [str(item) for item in raw.get("title_aliases", []) if str(item).strip()]
+        return cls(
+            source_file_type_id=str(raw["source_file_type_id"]),
+            source_section_key=str(raw["source_section_key"]),
+            target_file_type_id=str(raw["target_file_type_id"]),
+            target_section_key=str(raw["target_section_key"]),
+            labels=labels,
+            title_aliases=title_aliases,
         )
 
 
@@ -41,6 +64,7 @@ class SchemaProfile:
     mode_default: str
     supported_modes: list[str]
     h1_required_exactly_one: bool
+    enforce_required_sections: bool
     h2_unknown_policy: dict[str, str]
     kind_rule_format: str
     section_i18n: dict[str, dict[str, list[str]]]
@@ -48,3 +72,4 @@ class SchemaProfile:
     text_marker_enabled: bool
     text_marker_token: str
     text_marker_allowed_sections: list[str]
+    authoring_aliases: list[AuthoringAliasSpec]

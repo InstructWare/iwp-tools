@@ -40,6 +40,9 @@ def run_full(config: LintConfig) -> dict[str, Any]:
         exclude_markdown_globs=config.schema_exclude_markdown_globs,
         node_registry_file=config.node_registry_file,
         node_id_min_length=config.node_id_min_length,
+        page_only_enabled=config.page_only.enabled,
+        authoring_tokens_enabled=config.authoring.tokens.enabled,
+        node_generation_mode=config.authoring.node_generation_mode,
     )
     return _run_core(config, nodes, mode="full", changed_md_files=None, changed_code_files=None)
 
@@ -61,6 +64,9 @@ def run_diff(config: LintConfig, base: str | None, head: str | None) -> dict[str
         exclude_markdown_globs=config.schema_exclude_markdown_globs,
         node_registry_file=config.node_registry_file,
         node_id_min_length=config.node_id_min_length,
+        page_only_enabled=config.page_only.enabled,
+        authoring_tokens_enabled=config.authoring.tokens.enabled,
+        node_generation_mode=config.authoring.node_generation_mode,
     )
     impacted = impacted_nodes(nodes, diff)
     changed_md = {
@@ -88,6 +94,7 @@ def run_schema(config: LintConfig, mode_override: str | None = None) -> dict[str
         mode=mode_override or config.schema_mode,
         target_rel_paths=None,
         exclude_markdown_globs=config.schema_exclude_markdown_globs,
+        page_only_enabled=config.page_only.enabled,
     )
     diagnostics = sorted(
         schema_result.diagnostics,
@@ -100,6 +107,7 @@ def run_schema(config: LintConfig, mode_override: str | None = None) -> dict[str
         "summary": {
             "error_count": error_count,
             "warning_count": warning_count,
+            "page_only_enabled": bool(config.page_only.enabled),
             "total_nodes_in_scope": 0,
             "total_nodes_all": 0,
             "covered_nodes": 0,
@@ -140,6 +148,7 @@ def _run_core(
         mode=config.schema_mode,
         target_rel_paths=changed_md_files if mode == "diff" else None,
         exclude_markdown_globs=config.schema_exclude_markdown_globs,
+        page_only_enabled=config.page_only.enabled,
     )
     diagnostics.extend(schema_result.diagnostics)
     code_files = discover_code_files(
@@ -202,15 +211,39 @@ def _run_core(
     uncovered = [
         node for node in target_nodes if (node.source_path, node.node_id) not in linked_node_keys
     ]
+    trace_required_nodes = [node for node in target_nodes if node.trace_required]
+    trace_required_uncovered_nodes = [
+        node
+        for node in trace_required_nodes
+        if (node.source_path, node.node_id) not in linked_node_keys
+    ]
     for node in uncovered:
         profile = profile_by_node.get((node.source_path, node.node_id))
+        is_trace_required_uncovered = (
+            node.trace_required and (node.source_path, node.node_id) not in linked_node_keys
+        )
+        severity = "error" if is_trace_required_uncovered else (
+            profile.missing_severity if profile is not None else "error"
+        )
         diagnostics.append(
             Diagnostic(
                 code="IWP107",
                 message=f"Node not covered: {node.node_id}",
                 file_path=node.source_path,
                 line=node.line_start,
-                severity=profile.missing_severity if profile is not None else "error",
+                severity=severity,
+            )
+        )
+    kind_unknown_nodes = [node for node in target_nodes if node.section_key == "unknown_section"]
+    kind_unknown_severity = "error" if config.authoring.kind_unknown_policy == "error" else "warning"
+    for node in kind_unknown_nodes:
+        diagnostics.append(
+            Diagnostic(
+                code="IWP110",
+                message=f"Node semantic kind is unknown: {node.node_id}",
+                file_path=node.source_path,
+                line=node.line_start,
+                severity=kind_unknown_severity,
             )
         )
 
@@ -265,6 +298,7 @@ def _run_core(
         "summary": {
             "error_count": error_count,
             "warning_count": warning_count,
+            "page_only_enabled": bool(config.page_only.enabled),
             "total_nodes_in_scope": len(target_nodes),
             "total_nodes_all": all_nodes_count or len(target_nodes),
             "covered_nodes": metrics.linked_nodes,
@@ -272,6 +306,10 @@ def _run_core(
             "schema_matched_files": schema_result.matched_files,
             "kind_breakdown": kind_stats,
             "profile_breakdown": profile_breakdown(target_nodes, linked_node_keys, profile_by_node),
+            "trace_required_nodes": len(trace_required_nodes),
+            "trace_required_uncovered_nodes": len(trace_required_uncovered_nodes),
+            "trace_token_profile_enabled": bool(config.authoring.tokens.enabled),
+            "kind_unknown_nodes": len(kind_unknown_nodes),
         },
         "metrics": metrics.to_dict(),
         "profile_metrics": profile_breakdown(target_nodes, linked_node_keys, profile_by_node),

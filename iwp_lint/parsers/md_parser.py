@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..core.models import MarkdownNode
 from ..schema.schema_loader import load_schema_profile
-from ..schema.schema_semantics import match_file_type, resolve_section_keys
+from ..schema.schema_semantics import (
+    ParsedIwpControl,
+    SemanticResolver,
+    build_semantic_context,
+    build_semantic_resolver,
+    match_file_type,
+    parse_iwp_control_token,
+)
 from ..schema.schema_validator import list_markdown_rel_paths
 from ..versioning import DEFAULT_NODE_REGISTRY_FILE
 from .node_registry import NodeRegistry, build_short_node_ids_by_source, build_signature
@@ -15,6 +23,17 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 LIST_ITEM_RE = re.compile(r"^\s*-\s+(.*)$")
 NODE_OVERRIDE_RE = re.compile(r"<!--\s*@iwp\.node\s+([a-z0-9][a-z0-9._-]{2,127})\s*-->")
 TEXT_MARKER_RE = re.compile(r"^\[text\]\s*:?\s*(.*)$")
+
+
+@dataclass(frozen=True)
+class ParserContext:
+    kind_rule_format: str
+    text_marker_enabled: bool
+    text_marker_token: str
+    semantic_resolver: SemanticResolver
+    semantic_context: object
+    critical_patterns: list[str]
+    critical_granularity: str
 
 
 def slugify(value: str) -> str:
@@ -33,8 +52,25 @@ def parse_markdown_nodes(
     exclude_markdown_globs: list[str] | None = None,
     node_registry_file: str = DEFAULT_NODE_REGISTRY_FILE,
     node_id_min_length: int = 4,
+    page_only_enabled: bool = False,
+    authoring_tokens_enabled: bool = True,
+    node_generation_mode: str = "structural",
 ) -> list[MarkdownNode]:
     profile = load_schema_profile(schema_path)
+    semantic_context = build_semantic_context(
+        profile,
+        page_only_enabled=page_only_enabled,
+        authoring_tokens_enabled=authoring_tokens_enabled,
+    )
+    parser_context = ParserContext(
+        kind_rule_format=profile.kind_rule_format,
+        text_marker_enabled=profile.text_marker_enabled,
+        text_marker_token=profile.text_marker_token,
+        semantic_resolver=build_semantic_resolver(semantic_context),
+        semantic_context=semantic_context,
+        critical_patterns=critical_patterns,
+        critical_granularity=critical_granularity,
+    )
     registry = NodeRegistry((iwp_root.parent / node_registry_file).resolve())
     nodes: list[MarkdownNode] = []
     for rel in list_markdown_rel_paths(iwp_root, exclude_markdown_globs):
@@ -42,21 +78,17 @@ def parse_markdown_nodes(
         file_type = match_file_type(rel, profile.file_type_schemas)
         file_type_id = file_type.id if file_type else "unknown"
         allowed_section_keys = {item.key for item in file_type.sections} if file_type else set()
-        allow_unknown_sections = file_type.allow_unknown_sections if file_type else False
+        allow_unknown_sections = file_type.allow_unknown_sections if file_type else True
         nodes.extend(
             _parse_one_file(
                 path,
                 iwp_root,
-                critical_patterns,
-                section_i18n=profile.section_i18n,
+                context=parser_context,
                 file_type_id=file_type_id,
                 allowed_section_keys=allowed_section_keys,
                 allow_unknown_sections=allow_unknown_sections,
-                kind_rule_format=profile.kind_rule_format,
-                text_marker_enabled=profile.text_marker_enabled,
-                text_marker_token=profile.text_marker_token,
                 registry=registry,
-                critical_granularity=critical_granularity,
+                node_generation_mode=node_generation_mode,
             )
         )
     nodes = _with_line_end_ranges(nodes, iwp_root)
@@ -70,16 +102,12 @@ def parse_markdown_nodes(
 def _parse_one_file(
     path: Path,
     iwp_root: Path,
-    critical_patterns: list[str],
-    section_i18n: dict[str, dict[str, list[str]]],
+    context: ParserContext,
     file_type_id: str,
     allowed_section_keys: set[str],
     allow_unknown_sections: bool,
-    kind_rule_format: str,
-    text_marker_enabled: bool,
-    text_marker_token: str,
     registry: NodeRegistry,
-    critical_granularity: str,
+    node_generation_mode: str,
 ) -> list[MarkdownNode]:
     rel = path.relative_to(iwp_root).as_posix()
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -87,6 +115,10 @@ def _parse_one_file(
     local_nodes: list[MarkdownNode] = []
     pending_override: str | None = None
     current_section_key = "document"
+    current_file_type_id = file_type_id
+    current_section_trace_required = False
+    pending_list_scope_control: ParsedIwpControl | None = None
+    active_list_scope_control: ParsedIwpControl | None = None
 
     for idx, line in enumerate(lines, start=1):
         override_match = NODE_OVERRIDE_RE.search(line)
@@ -96,106 +128,230 @@ def _parse_one_file(
 
         heading_match = HEADING_RE.match(line)
         if heading_match:
+            pending_list_scope_control = None
+            active_list_scope_control = None
             level = len(heading_match.group(1))
-            title = heading_match.group(2).strip()
+            raw_title = heading_match.group(2).strip()
+            title, heading_control = parse_iwp_control_token(
+                raw_title, enabled=bool(getattr(context.semantic_context, "authoring_tokens_enabled", True))
+            )
+            title = title or raw_title
+            heading_resolution = None
             if level == 2:
-                resolved = resolve_section_keys(title, section_i18n)
-                if len(resolved) == 1 and (
-                    not allowed_section_keys or resolved[0] in allowed_section_keys
-                ):
-                    current_section_key = resolved[0]
-                elif allow_unknown_sections:
-                    current_section_key = slugify(title)
-                else:
-                    current_section_key = "unknown_section"
+                heading_resolution = context.semantic_resolver.resolve_heading(
+                    title=title,
+                    file_type_id=file_type_id,
+                    allowed_section_keys=allowed_section_keys,
+                    allow_unknown_sections=allow_unknown_sections,
+                    control=heading_control,
+                )
+                current_file_type_id = heading_resolution.file_type_id
+                current_section_key = heading_resolution.section_key
+                current_section_trace_required = heading_resolution.trace_required
             elif level < 2:
                 current_section_key = "document"
+                current_file_type_id = file_type_id
+                current_section_trace_required = False
             while heading_stack and heading_stack[-1][0] >= level:
                 heading_stack.pop()
             heading_stack.append((level, title))
             title_path = ".".join(slugify(item[1]) for item in heading_stack)
             parent_titles = [item[1] for item in heading_stack[:-1]]
+            node_file_type_id = current_file_type_id
+            node_section_key = current_section_key
             signature = build_signature(
                 source_path=rel,
-                file_type_id=file_type_id,
-                section_key=current_section_key,
+                file_type_id=node_file_type_id,
+                section_key=node_section_key,
                 node_type="heading",
                 parent_titles=parent_titles,
                 anchor_text=title,
             )
             node_id = registry.assign_uid(signature, pending_override)
             pending_override = None
-            is_critical = _is_critical(title, critical_patterns)
-            local_nodes.append(
-                MarkdownNode(
-                    node_id=node_id,
-                    source_path=rel,
-                    line_start=idx,
-                    line_end=idx,
-                    title_path=title_path,
-                    anchor_text=title,
-                    section_key=current_section_key,
-                    file_type_id=file_type_id,
-                    computed_kind=_compute_kind(
-                        kind_rule_format, file_type_id, current_section_key
-                    ),
-                    anchor_level=_resolve_anchor_level(
-                        file_type_id=file_type_id,
-                        section_key=current_section_key,
-                        is_text=False,
-                    ),
-                    is_critical=is_critical,
-                )
+            is_critical = _is_critical(title, context.critical_patterns)
+            trace_required = (
+                heading_resolution.trace_required
+                if heading_resolution is not None
+                else current_section_trace_required
             )
+            trace_source = (
+                heading_resolution.trace_source if heading_resolution is not None else "section_token"
+            )
+            if _should_emit_node(
+                node_generation_mode=node_generation_mode, trace_required=trace_required
+            ):
+                local_nodes.append(
+                    MarkdownNode(
+                        node_id=node_id,
+                        source_path=rel,
+                        line_start=idx,
+                        line_end=idx,
+                        title_path=title_path,
+                        anchor_text=title,
+                        section_key=node_section_key,
+                        file_type_id=node_file_type_id,
+                        computed_kind=_compute_kind(
+                            context.kind_rule_format, node_file_type_id, node_section_key
+                        ),
+                        anchor_level=_resolve_anchor_level(
+                            file_type_id=node_file_type_id,
+                            section_key=node_section_key,
+                            is_text=False,
+                        ),
+                        is_critical=is_critical,
+                        trace_required=trace_required,
+                        trace_source=trace_source,
+                    )
+                )
             continue
 
         list_match = LIST_ITEM_RE.match(line)
         if list_match and heading_stack:
-            item_text = list_match.group(1).strip()
+            if pending_list_scope_control is not None:
+                active_list_scope_control = pending_list_scope_control
+                pending_list_scope_control = None
+            raw_item_text = list_match.group(1).strip()
+            item_text, item_control = parse_iwp_control_token(
+                raw_item_text,
+                enabled=bool(getattr(context.semantic_context, "authoring_tokens_enabled", True)),
+            )
+            effective_control = item_control or active_list_scope_control
             item_text, is_text = _extract_text_marker(
                 item_text=item_text,
-                text_marker_enabled=text_marker_enabled,
-                text_marker_token=text_marker_token,
+                text_marker_enabled=context.text_marker_enabled,
+                text_marker_token=context.text_marker_token,
             )
             title_path = ".".join(slugify(item[1]) for item in heading_stack)
             parent_titles = [item[1] for item in heading_stack]
+            resolution = context.semantic_resolver.resolve_list_item(
+                file_type_id=current_file_type_id,
+                current_section_key=current_section_key,
+                control=effective_control,
+                inherited_trace_required=current_section_trace_required,
+            )
+            node_file_type_id = resolution.file_type_id
+            node_section_key = resolution.section_key
             signature = build_signature(
                 source_path=rel,
-                file_type_id=file_type_id,
-                section_key=current_section_key,
+                file_type_id=node_file_type_id,
+                section_key=node_section_key,
                 node_type="list_item",
                 parent_titles=parent_titles,
                 anchor_text=item_text,
             )
             node_id = registry.assign_uid(signature, pending_override)
             pending_override = None
-            title_is_critical = _is_critical(heading_stack[-1][1], critical_patterns)
-            item_is_critical = _is_critical(item_text, critical_patterns)
-            if critical_granularity == "title_only":
+            title_is_critical = _is_critical(heading_stack[-1][1], context.critical_patterns)
+            item_is_critical = _is_critical(item_text, context.critical_patterns)
+            if context.critical_granularity == "title_only":
                 is_critical = item_is_critical
             else:
                 is_critical = item_is_critical or title_is_critical
-            local_nodes.append(
-                MarkdownNode(
-                    node_id=node_id,
-                    source_path=rel,
-                    line_start=idx,
-                    line_end=idx,
-                    title_path=title_path,
-                    anchor_text=item_text,
-                    section_key=current_section_key,
-                    file_type_id=file_type_id,
-                    computed_kind=_compute_kind(
-                        kind_rule_format, file_type_id, current_section_key
-                    ),
-                    anchor_level=_resolve_anchor_level(
-                        file_type_id=file_type_id,
-                        section_key=current_section_key,
-                        is_text=is_text,
-                    ),
-                    is_critical=is_critical,
+            if _should_emit_node(
+                node_generation_mode=node_generation_mode, trace_required=resolution.trace_required
+            ):
+                local_nodes.append(
+                    MarkdownNode(
+                        node_id=node_id,
+                        source_path=rel,
+                        line_start=idx,
+                        line_end=idx,
+                        title_path=title_path,
+                        anchor_text=item_text,
+                        section_key=node_section_key,
+                        file_type_id=node_file_type_id,
+                        computed_kind=_compute_kind(
+                            context.kind_rule_format, node_file_type_id, node_section_key
+                        ),
+                        anchor_level=_resolve_anchor_level(
+                            file_type_id=node_file_type_id,
+                            section_key=node_section_key,
+                            is_text=is_text,
+                        ),
+                        is_critical=is_critical,
+                        trace_required=resolution.trace_required,
+                        trace_source=resolution.trace_source,
+                    )
                 )
-            )
+            continue
+
+        if heading_stack:
+            raw_text_line = line.strip()
+            if active_list_scope_control is not None:
+                active_list_scope_control = None
+            if raw_text_line and pending_list_scope_control is not None:
+                if not raw_text_line.startswith("<!--") and not raw_text_line.startswith("```"):
+                    pending_list_scope_control = None
+            if (
+                raw_text_line
+                and not raw_text_line.startswith("<!--")
+                and not raw_text_line.startswith("```")
+            ):
+                text_line, text_control = parse_iwp_control_token(
+                    raw_text_line,
+                    enabled=bool(
+                        getattr(context.semantic_context, "authoring_tokens_enabled", True)
+                    ),
+                )
+                if text_control is not None and not text_line.strip():
+                    if _has_following_list_block(lines, idx):
+                        pending_list_scope_control = text_control
+                    continue
+                if text_control is not None:
+                    title_path = ".".join(slugify(item[1]) for item in heading_stack)
+                    parent_titles = [item[1] for item in heading_stack]
+                    resolution = context.semantic_resolver.resolve_list_item(
+                        file_type_id=current_file_type_id,
+                        current_section_key=current_section_key,
+                        control=text_control,
+                        inherited_trace_required=current_section_trace_required,
+                    )
+                    node_file_type_id = resolution.file_type_id
+                    node_section_key = resolution.section_key
+                    signature = build_signature(
+                        source_path=rel,
+                        file_type_id=node_file_type_id,
+                        section_key=node_section_key,
+                        node_type="text_line",
+                        parent_titles=parent_titles,
+                        anchor_text=text_line,
+                    )
+                    node_id = registry.assign_uid(signature, pending_override)
+                    pending_override = None
+                    title_is_critical = _is_critical(heading_stack[-1][1], context.critical_patterns)
+                    text_is_critical = _is_critical(text_line, context.critical_patterns)
+                    if context.critical_granularity == "title_only":
+                        is_critical = text_is_critical
+                    else:
+                        is_critical = text_is_critical or title_is_critical
+                    if _should_emit_node(
+                        node_generation_mode=node_generation_mode,
+                        trace_required=resolution.trace_required,
+                    ):
+                        local_nodes.append(
+                            MarkdownNode(
+                                node_id=node_id,
+                                source_path=rel,
+                                line_start=idx,
+                                line_end=idx,
+                                title_path=title_path,
+                                anchor_text=text_line,
+                                section_key=node_section_key,
+                                file_type_id=node_file_type_id,
+                                computed_kind=_compute_kind(
+                                    context.kind_rule_format, node_file_type_id, node_section_key
+                                ),
+                                anchor_level=_resolve_anchor_level(
+                                    file_type_id=node_file_type_id,
+                                    section_key=node_section_key,
+                                    is_text=False,
+                                ),
+                                is_critical=is_critical,
+                                trace_required=resolution.trace_required,
+                                trace_source=resolution.trace_source,
+                            )
+                        )
 
     return local_nodes
 
@@ -225,6 +381,27 @@ def _is_critical(text: str, patterns: list[str]) -> bool:
 
 def _compute_kind(kind_rule_format: str, file_type_id: str, section_key: str) -> str:
     return kind_rule_format.format(file_type_id=file_type_id, section_key=section_key)
+
+
+def _should_emit_node(*, node_generation_mode: str, trace_required: bool) -> bool:
+    if node_generation_mode == "annotated_only":
+        return trace_required
+    return True
+
+
+def _has_following_list_block(lines: list[str], line_index: int) -> bool:
+    for raw in lines[line_index:]:
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("<!--"):
+            continue
+        if stripped.startswith("```"):
+            return False
+        if HEADING_RE.match(raw):
+            return False
+        return bool(LIST_ITEM_RE.match(raw))
+    return False
 
 
 def _extract_text_marker(

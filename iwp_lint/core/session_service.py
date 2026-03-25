@@ -574,6 +574,9 @@ class SessionService:
             exclude_markdown_globs=self._config.schema_exclude_markdown_globs,
             node_registry_file=self._config.node_registry_file,
             node_id_min_length=self._config.node_id_min_length,
+            page_only_enabled=self._config.page_only.enabled,
+            authoring_tokens_enabled=self._config.authoring.tokens.enabled,
+            node_generation_mode=self._config.authoring.node_generation_mode,
         )
         return impacted_nodes(nodes, diff)
 

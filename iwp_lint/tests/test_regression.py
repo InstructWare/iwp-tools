@@ -33,6 +33,7 @@ from iwp_lint.core.node_catalog import (
     verify_compiled_context,
 )
 from iwp_lint.parsers.md_parser import parse_markdown_nodes
+from iwp_lint.schema.schema_loader import load_schema_profile
 from iwp_lint.schema.schema_semantics import resolve_section_keys
 from iwp_lint.schema.schema_validator import validate_markdown_schema
 from iwp_lint.vcs.diff_resolver import load_diff
@@ -63,9 +64,75 @@ def _base_schema() -> dict:
             "h2_unknown_policy": {"compat": "warn", "strict": "error"},
         },
         "kind_rules": {"format": "{file_type_id}.{section_key}"},
+        "authoring_rules": {
+            "aliases": [
+                {
+                    "source_file_type_id": "views.pages",
+                    "source_section_key": "trigger",
+                    "target_file_type_id": "logic",
+                    "target_section_key": "trigger",
+                    "labels": ["Logic.Trigger"],
+                    "title_aliases": ["Logic.Trigger", "Logic Trigger", "Logic_Trigger"],
+                },
+                {
+                    "source_file_type_id": "views.pages",
+                    "source_section_key": "input",
+                    "target_file_type_id": "logic",
+                    "target_section_key": "input",
+                    "labels": ["Logic.Input"],
+                    "title_aliases": ["Logic.Input", "Logic Input", "Logic_Input"],
+                },
+                {
+                    "source_file_type_id": "views.pages",
+                    "source_section_key": "output",
+                    "target_file_type_id": "logic",
+                    "target_section_key": "output",
+                    "labels": ["Logic.Output"],
+                    "title_aliases": ["Logic.Output", "Logic Output", "Logic_Output"],
+                },
+                {
+                    "source_file_type_id": "views.pages",
+                    "source_section_key": "fields",
+                    "target_file_type_id": "state",
+                    "target_section_key": "fields",
+                    "labels": ["State.Fields"],
+                    "title_aliases": ["State.Fields", "State Fields", "State_Fields"],
+                },
+                {
+                    "source_file_type_id": "views.pages",
+                    "source_section_key": "constraints",
+                    "target_file_type_id": "state",
+                    "target_section_key": "constraints",
+                    "labels": ["State.Constraints"],
+                    "title_aliases": [
+                        "State.Constraints",
+                        "State Constraints",
+                        "State_Constraints",
+                    ],
+                },
+                {
+                    "source_file_type_id": "views.pages",
+                    "source_section_key": "update_rules",
+                    "target_file_type_id": "state",
+                    "target_section_key": "update_rules",
+                    "labels": ["State.UpdateRules"],
+                    "title_aliases": [
+                        "State.UpdateRules",
+                        "State UpdateRules",
+                        "State_UpdateRules",
+                    ],
+                },
+            ]
+        },
         "section_i18n": {
             "layout_tree": {"en": ["Layout Tree"]},
             "interaction_hooks": {"en": ["Interaction Hooks"]},
+            "trigger": {"en": ["Trigger"]},
+            "input": {"en": ["Input"]},
+            "output": {"en": ["Output"]},
+            "fields": {"en": ["Fields"]},
+            "constraints": {"en": ["Constraints"]},
+            "update_rules": {"en": ["Update Rules"]},
             "dup_a": {"en": ["Shared"]},
             "dup_b": {"en": ["Shared"]},
         },
@@ -73,6 +140,7 @@ def _base_schema() -> dict:
             {
                 "id": "views.pages",
                 "path_patterns": ["views/pages/**/*.md", "views/pages/*.md"],
+                "allow_unknown_sections": False,
                 "sections": [
                     {"key": "layout_tree", "required": True},
                     {"key": "interaction_hooks", "required": False},
@@ -279,6 +347,27 @@ class IwpLintRegressionTests(unittest.TestCase):
             config_custom = load_config(str(cfg_dir / ".iwp-lint.custom.json"))
             self.assertEqual(config_custom.code_exclude_globs, ["**/vendor/**"])
 
+    def test_config_page_only_can_be_enabled(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            cfg_dir = root / "ci"
+            _write(
+                cfg_dir / ".iwp-lint.json",
+                json.dumps({"schema": {"page_only": {"enabled": True}}}),
+            )
+            config = load_config(str(cfg_dir / ".iwp-lint.json"))
+            self.assertTrue(config.page_only.enabled)
+
+    def test_schema_authoring_aliases_are_loaded_from_schema_file(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            profile = load_schema_profile(schema_path)
+            alias_labels = [label for alias in profile.authoring_aliases for label in alias.labels]
+            self.assertIn("Logic.Trigger", alias_labels)
+            self.assertIn("State.UpdateRules", alias_labels)
+
     def test_builtin_schema_source_works_without_local_schema_file(self) -> None:
         with _workspace_tmpdir() as td:
             root = Path(td)
@@ -291,6 +380,93 @@ class IwpLintRegressionTests(unittest.TestCase):
             self.assertEqual(resolve_schema_source(config), "builtin:iwp-schema.v1")
             report = run_schema(config)
             self.assertIn("summary", report)
+
+    def test_page_only_parser_maps_namespaced_h2_to_logic_and_state(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(
+                iwp_root / "views/pages/home.md",
+                "\n".join(
+                    [
+                        "# Home",
+                        "",
+                        "## Layout Tree",
+                        "- Hero",
+                        "",
+                        "## Logic.Trigger",
+                        "- Click CTA",
+                        "",
+                        "## Logic.Input",
+                        "- User context",
+                        "",
+                        "## Logic.Output",
+                        "- Navigate docs",
+                        "",
+                        "## State.Fields",
+                        "- current_doc",
+                    ]
+                )
+                + "\n",
+            )
+            nodes = parse_markdown_nodes(
+                iwp_root=iwp_root,
+                critical_patterns=[],
+                schema_path=schema_path,
+                page_only_enabled=True,
+            )
+            mapped = {node.anchor_text: node for node in nodes}
+            self.assertEqual(mapped["Click CTA"].file_type_id, "logic")
+            self.assertEqual(mapped["Click CTA"].section_key, "trigger")
+            self.assertEqual(mapped["Click CTA"].computed_kind, "logic.trigger")
+            self.assertEqual(mapped["current_doc"].file_type_id, "state")
+            self.assertEqual(mapped["current_doc"].section_key, "fields")
+            self.assertEqual(mapped["current_doc"].computed_kind, "state.fields")
+            self.assertEqual(mapped["Click CTA"].source_path, "views/pages/home.md")
+
+    def test_page_only_schema_allows_namespaced_h2_only_when_enabled(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(
+                iwp_root / "views/pages/home.md",
+                "\n".join(
+                    [
+                        "# Home",
+                        "",
+                        "## Layout Tree",
+                        "- Hero",
+                        "",
+                        "## Logic.Trigger",
+                        "- Click CTA",
+                    ]
+                )
+                + "\n",
+            )
+            disabled_diags = validate_markdown_schema(
+                iwp_root=iwp_root,
+                schema_path=schema_path,
+                mode="strict",
+                page_only_enabled=False,
+            ).diagnostics
+            self.assertTrue(
+                any(
+                    "Logic.Trigger" in diag.message
+                    for diag in disabled_diags
+                    if diag.code == "IWP202"
+                )
+            )
+            enabled_diags = validate_markdown_schema(
+                iwp_root=iwp_root,
+                schema_path=schema_path,
+                mode="strict",
+                page_only_enabled=True,
+            ).diagnostics
+            self.assertFalse(any(diag.code == "IWP202" for diag in enabled_diags))
 
     def test_versioning_constants_drive_default_config(self) -> None:
         config = LintConfig(project_root=Path.cwd())

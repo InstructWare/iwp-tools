@@ -61,6 +61,8 @@ flowchart LR
 - `parsers/node_registry.py`：稳定键（stable_key）分配 + canonical 短 `node_id` 写回
 - `parsers/comment_scanner.py`：代码注释扫描与协议正则校验
 - `schema/*`：schema profile 读取、文件类型匹配、section 合法性校验
+  - 支持可选 `schema.page_only.enabled`：在 `views.pages` 中识别 namespaced H2（`Logic.*` / `State.*`）并映射到 `logic/state` 语义
+  - namespaced 映射规则来自 schema `authoring_rules.aliases`，lint/build 只做解释执行
 - `vcs/diff_resolver.py`：DiffProvider 抽象与受影响节点筛选
 - `vcs/snapshot_store.py`：snapshot/session 基线与审计事件（SQLite）+ workspace 文件采集
 - `vcs/snapshot_diff.py`：diff 计算逻辑（文件变更、markdown 行级、代码行级/hunk）
@@ -83,6 +85,7 @@ flowchart LR
 - `source_path`：相对 IWP 根路径（例如 `views/pages/home.md`）
 - `line_start`/`line_end`：节点在原文中的行范围
 - `section_key`、`file_type_id`、`computed_kind`：Schema 语义上下文
+  - 在 Page Only 模式下，`source_path` 保持页面路径；`file_type_id`/`computed_kind` 会映射到 `logic.*` 或 `state.*`
 - `is_critical`：关键节点标记（由配置关键词匹配）
 
 ### 3.2 `LinkAnnotation`
@@ -352,4 +355,3 @@ python -m iwp_lint full --config .iwp-lint.yaml
 - 构造“重排列表”“文案微调”“跨语言文档”场景做回归
 - 检查 `.iwp/node_registry.v1.json` 是否符合预期演化
 - 检查 `.iwp/cache/snapshots.sqlite` 与 `.iwp/compiled/` 产物是否符合预期
-

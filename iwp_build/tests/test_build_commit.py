@@ -8,7 +8,7 @@ from pathlib import Path
 
 from iwp_build.cli import _run_build, _run_verify
 from iwp_lint.api import compile_context, verify_code_sidecar_freshness
-from iwp_lint.config import LintConfig
+from iwp_lint.config import LintConfig, PageOnlyConfig
 from iwp_lint.parsers.md_parser import parse_markdown_nodes
 from iwp_lint.vcs.snapshot_store import SnapshotStore
 
@@ -48,6 +48,41 @@ def _workspace_tmpdir() -> tempfile.TemporaryDirectory[str]:
 
 
 class IwpBuildCommitTests(unittest.TestCase):
+    def test_build_json_exposes_page_only_mode_flag(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(iwp_root / "architecture.md", "# Architecture\n\n## Layout Tree\n- Alpha\n")
+            nodes = parse_markdown_nodes(
+                iwp_root=iwp_root,
+                critical_patterns=[],
+                schema_path=schema_path,
+                node_registry_file=".iwp/node_registry.v1.json",
+            )
+            _write(
+                root / "_ir/src/iwp_links.ts",
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
+            )
+            config = LintConfig(
+                project_root=root.resolve(),
+                iwp_root="InstructWare.iw",
+                schema_file="schema.json",
+                snapshot_db_file=".iwp/cache/snapshots.sqlite",
+                include_ext=[".ts"],
+                code_roots=["_ir/src"],
+                node_registry_file=".iwp/node_registry.v1.json",
+                node_catalog_file=".iwp/node_catalog.v1.json",
+                compiled_dir=".iwp/compiled",
+                page_only=PageOnlyConfig(enabled=True),
+            )
+            payload_path = root / "out/build.json"
+            self.assertEqual(_run_build(config, mode="auto", json_path=payload_path.as_posix()), 0)
+            payload = json.loads(payload_path.read_text(encoding="utf-8"))
+            self.assertTrue(bool(payload.get("mode_flags", {}).get("page_only_enabled")))
+            self.assertTrue(bool(payload.get("summary", {}).get("page_only_enabled")))
+
     def test_build_emits_code_sidecar_by_default(self) -> None:
         with _workspace_tmpdir() as td:
             root = Path(td)

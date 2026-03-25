@@ -78,6 +78,25 @@ class SessionConfig:
     warning_summary_top_n: int = 2
 
 
+@dataclass
+class PageOnlyConfig:
+    enabled: bool = False
+
+
+@dataclass
+class AuthoringTokensConfig:
+    enabled: bool = True
+    scope: str = "global"
+
+
+@dataclass
+class AuthoringConfig:
+    tokens: AuthoringTokensConfig = field(default_factory=AuthoringTokensConfig)
+    node_generation_mode: str = "structural"
+    kind_unknown_policy: str = "warn"
+    strict_scopes: list[str] = field(default_factory=list)
+
+
 def _default_coverage_profiles() -> list[CoverageProfile]:
     return [
         CoverageProfile(
@@ -157,6 +176,8 @@ class LintConfig:
     schema_file: str = DEFAULT_SCHEMA_SOURCE
     schema_mode: str = "compat"
     schema_exclude_markdown_globs: list[str] = field(default_factory=lambda: ["README.md"])
+    page_only: PageOnlyConfig = field(default_factory=PageOnlyConfig)
+    authoring: AuthoringConfig = field(default_factory=AuthoringConfig)
     node_registry_file: str = DEFAULT_NODE_REGISTRY_FILE
     node_id_min_length: int = 4
     node_catalog_file: str = DEFAULT_NODE_CATALOG_FILE
@@ -213,6 +234,10 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
             else configured_root.resolve()
         )
 
+    schema_raw = raw.get("schema", {})
+    page_only_raw = schema_raw.get("page_only", {})
+    authoring_raw = raw.get("authoring", {})
+    tokens_raw = authoring_raw.get("tokens", {})
     return LintConfig(
         project_root=project_root,
         iwp_root=raw.get("iwp_root", "InstructWare.iw"),
@@ -244,10 +269,24 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
         diff_head=str(raw.get("diff_defaults", {}).get("head", "")),
         diff_strict=bool(raw.get("diff_defaults", {}).get("strict", True)),
         diff_provider=str(raw.get("diff_defaults", {}).get("provider", "filesystem_snapshot")),
-        schema_file=str(raw.get("schema", {}).get("file", DEFAULT_SCHEMA_SOURCE)),
-        schema_mode=str(raw.get("schema", {}).get("mode", "compat")),
-        schema_exclude_markdown_globs=list(
-            raw.get("schema", {}).get("exclude_markdown_globs", ["README.md"])
+        schema_file=str(schema_raw.get("file", DEFAULT_SCHEMA_SOURCE)),
+        schema_mode=str(schema_raw.get("mode", "compat")),
+        schema_exclude_markdown_globs=list(schema_raw.get("exclude_markdown_globs", ["README.md"])),
+        page_only=PageOnlyConfig(
+            enabled=bool(page_only_raw.get("enabled", False)),
+        ),
+        authoring=AuthoringConfig(
+            tokens=AuthoringTokensConfig(
+                enabled=bool(tokens_raw.get("enabled", True)),
+                scope=str(tokens_raw.get("scope", "global")),
+            ),
+            node_generation_mode=_load_node_generation_mode(
+                authoring_raw.get("node_generation_mode", raw.get("node_generation_mode", "structural"))
+            ),
+            kind_unknown_policy=_load_kind_unknown_policy(
+                authoring_raw.get("kind_unknown_policy", "warn")
+            ),
+            strict_scopes=[str(item) for item in authoring_raw.get("strict_scopes", [])],
         ),
         node_registry_file=str(raw.get("node_registry_file", DEFAULT_NODE_REGISTRY_FILE)),
         node_id_min_length=int(raw.get("node_id_min_length", 4)),
@@ -389,6 +428,20 @@ def _load_node_severity(raw: Any) -> str:
     if value in {"all", "error", "warning"}:
         return value
     return "all"
+
+
+def _load_kind_unknown_policy(raw: Any) -> str:
+    value = str(raw).strip().lower()
+    if value in {"warn", "error"}:
+        return value
+    return "warn"
+
+
+def _load_node_generation_mode(raw: Any) -> str:
+    value = str(raw).strip().lower()
+    if value in {"structural", "annotated_only"}:
+        return value
+    return "structural"
 
 
 def is_builtin_schema_source(schema_file: str) -> bool:

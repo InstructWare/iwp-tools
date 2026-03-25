@@ -5,6 +5,11 @@
 It provides read-only build diagnostics and reuses `iwp_lint` as the quality/diff engine.
 For day-to-day agent and CI workflows, use `iwp-build` as the primary CLI entrypoint.
 
+Protocol alignment note:
+
+- Core intent authoring is page-first (`pages/**/*.md`) with selective `@iwp` annotations.
+- Some payload fields retain legacy internal names for backward compatibility; treat them as diagnostic metadata.
+
 ## Development Setup
 
 ```bash
@@ -65,7 +70,7 @@ uv run iwp-build verify --config .iwp-lint.yaml --quiet-warnings
 uv run iwp-build watch --config .iwp-lint.yaml --verify
 uv run iwp-build session current --config .iwp-lint.yaml --json out/session-current.json
 uv run iwp-build session diff --config .iwp-lint.yaml --format both --json out/session-diff.json
-uv run iwp-build session diff --config .iwp-lint.yaml --include-baseline-gaps --focus-path views/pages/home.md --max-gap-items 20 --json out/session-diff.gaps.json
+uv run iwp-build session diff --config .iwp-lint.yaml --include-baseline-gaps --focus-path pages/home.md --max-gap-items 20 --json out/session-diff.gaps.json
 uv run iwp-build session diff --config .iwp-lint.yaml --code-diff-level hunk --code-diff-context-lines 3 --code-diff-max-chars 12000 --json out/session-diff-hunk.json
 uv run iwp-build session reconcile --config .iwp-lint.yaml --format both --debug-raw --json out/session-reconcile.debug.json
 uv run iwp-build session reconcile --config .iwp-lint.yaml --max-diagnostics 20 --suggest-fixes --json out/session-reconcile.fixes.json
@@ -114,6 +119,7 @@ uv run iwp-build verify --config .iwp-lint.yaml --with-tests
 Output notes:
 
 - `--json` writes the full build payload (`summary`, `compile`, `intent_diff`, `gap_report`, `checkpoint`)
+- build JSON may include legacy-named compatibility fields (`mode_flags.page_only_enabled`, `summary.page_only_enabled`)
 - build default includes code sidecar output (`.iwp/compiled/code/_ir/**` by default)
 - `--no-code-sidecar` disables sidecar generation for faster local loops
 - `build` prints baseline state as diff context (`exists`, `id`) and never advances baseline
@@ -247,10 +253,10 @@ Text protocol examples:
 <<<IWP_DIFF_V1>>>
 session_id:"s.86a6f9baf697"
 status:"dirty"
-file:"views/pages/home.md"
+file:"pages/home.md"
 +[50]:{n.578c} "Test"
 link_targets:
-- "views/pages/home.md::n.578c"
+- "pages/home.md::n.578c"
 <<<END_IWP_DIFF_V1>>>
 ```
 
@@ -266,7 +272,7 @@ next_actions:
 hints:
 - kind="remediation" message="run: uv run iwp-lint links normalize --config .iwp-lint.yaml --write" command="uv run iwp-lint links normalize --config .iwp-lint.yaml --write"
 code_path_hints:
-- "_ir/src/views/pages/HomePage.vue"
+- "_ir/src/pages/HomePage.vue"
 <<<END_IWP_RECONCILE_V1>>>
 ```
 
@@ -279,9 +285,9 @@ Build e2e tests are fixture-driven and map to agent flow stages:
 
 Covered flows:
 
-- feature add node: build fails before link patch, then passes after `@iwp.link` update
-- feature delete node: stale link fails verify, cleanup + rebuild restores green state
-- feature modify node: impacted nodes detected in diff, link update required
+- page-intent add node: build fails before link patch, then passes after `@iwp.link` update
+- page-intent delete node: stale link fails verify, cleanup + rebuild restores green state
+- page-intent modify node: impacted nodes detected in diff, link update required
 - bootstrap without baseline and without links: first build fails, patch links, second build passes without baseline update
 - bootstrap first build: `--mode auto` enters `bootstrap_full` in read-only build mode
 

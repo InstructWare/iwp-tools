@@ -5,6 +5,10 @@
 In normal agent/runtime workflows, prefer `iwp-build` as the user-facing CLI.
 Use `iwp-lint` directly for lint-focused diagnostics, normalization, and engine-level troubleshooting.
 
+Protocol alignment note:
+
+- Core authoring is page-first (`pages/**/*.md`) with selective `@iwp` annotation.
+
 ## Development Setup
 
 ```bash
@@ -45,10 +49,10 @@ Use one single-line annotation in code comments:
 Example:
 
 ```text
-@iwp.link views/pages/home.md::n.abc1
+@iwp.link pages/home.md::n.abc1
 ```
 
-Views text marker (minimal syntax):
+Page text marker (minimal syntax):
 
 ```text
 - [text] Hero title copy
@@ -78,7 +82,7 @@ uv run iwp-lint schema --config .iwp-lint.yaml --mode strict --json out/iwp-sche
 ```bash
 # Prefer iwp-build presets for runtime loops:
 uv run iwp-build session diff --config .iwp-lint.yaml --preset agent-default
-uv run iwp-build session diff --config .iwp-lint.yaml --include-baseline-gaps --focus-path views/pages/home.md --max-gap-items 20
+uv run iwp-build session diff --config .iwp-lint.yaml --include-baseline-gaps --focus-path pages/home.md --max-gap-items 20
 uv run iwp-build session reconcile --config .iwp-lint.yaml --preset agent-default --max-diagnostics 20 --suggest-fixes
 uv run iwp-build session commit --config .iwp-lint.yaml --preset ci-strict
 ```
@@ -119,11 +123,11 @@ Status line semantics:
 
 ```bash
 uv run iwp-lint nodes build --config .iwp-lint.yaml --json out/iwp-node-catalog.json
-uv run iwp-lint nodes query --config .iwp-lint.yaml --source views/pages/home.md --text "Read Manifesto" --limit 5
-uv run iwp-lint nodes query --config .iwp-lint.yaml --source views/pages/home.md --line 42
-uv run iwp-lint nodes query --config .iwp-lint.yaml --source views/pages/home.md --text "Read Manifesto" --top1-only --format link
-uv run iwp-lint nodes export --config .iwp-lint.yaml --source views/pages/home.md --json out/nodes-home.json
-uv run iwp-lint nodes export --config .iwp-lint.yaml --source views/pages/docs/index.md --source views/pages/docs/manifesto.md --json out/nodes-docs.json
+uv run iwp-lint nodes query --config .iwp-lint.yaml --source pages/home.md --text "Read Manifesto" --limit 5
+uv run iwp-lint nodes query --config .iwp-lint.yaml --source pages/home.md --line 42
+uv run iwp-lint nodes query --config .iwp-lint.yaml --source pages/home.md --text "Read Manifesto" --top1-only --format link
+uv run iwp-lint nodes export --config .iwp-lint.yaml --source pages/home.md --json out/nodes-home.json
+uv run iwp-lint nodes export --config .iwp-lint.yaml --source pages/docs/index.md --source pages/docs/manifesto.md --json out/nodes-docs.json
 uv run iwp-lint nodes compile --config .iwp-lint.yaml
 uv run iwp-lint nodes verify-compiled --config .iwp-lint.yaml
 uv run iwp-lint links normalize --config .iwp-lint.yaml
@@ -281,7 +285,7 @@ Default excludes are:
 Then it resolves `@iwp.link <source_path>::<node_id>` and injects IWP context blocks:
 
 ```text
-<<<IWP_NODE_CONTEXT source=views/pages/home.md node=n.a327>>>
+<<<IWP_NODE_CONTEXT source=pages/home.md node=n.a327>>>
 Read Manifesto
 - Read Manifesto
 <<<IWP_NODE_CONTEXT_END>>>
@@ -427,4 +431,3 @@ Run only lint e2e:
 ```bash
 uv run python -m unittest iwp_lint.tests.test_e2e_suite
 ```
-

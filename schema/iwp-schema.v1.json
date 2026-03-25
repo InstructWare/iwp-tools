@@ -12,6 +12,7 @@
   },
   "global_rules": {
     "h1_required_exactly_one": true,
+    "enforce_required_sections": false,
     "h2_unknown_policy": {
       "compat": "warn",
       "strict": "error"
@@ -31,647 +32,124 @@
       ]
     }
   },
-  "section_i18n": {
-    "layout_tree": {
-      "en": [
-        "Layout Tree"
-      ],
-      "zh-CN": [
-        "布局树"
-      ]
-    },
-    "interaction_hooks": {
-      "en": [
-        "Interaction Hooks"
-      ],
-      "zh-CN": [
-        "交互钩子"
-      ]
-    },
-    "display_rules": {
-      "en": [
-        "Display Rules"
-      ],
-      "zh-CN": [
-        "展示规则"
-      ]
-    },
-    "layout": {
-      "en": [
-        "Layout"
-      ],
-      "zh-CN": [
-        "布局"
-      ]
-    },
-    "trigger": {
-      "en": [
-        "Trigger"
-      ],
-      "zh-CN": [
-        "触发条件"
-      ]
-    },
-    "execution_flow": {
-      "en": [
-        "Execution Flow"
-      ],
-      "zh-CN": [
-        "执行流程"
-      ]
-    },
-    "input": {
-      "en": [
-        "Input"
-      ],
-      "zh-CN": [
-        "输入"
-      ]
-    },
-    "guard_rules": {
-      "en": [
-        "Guard Rules"
-      ],
-      "zh-CN": [
-        "守卫规则"
-      ]
-    },
-    "post_redirect_rules": {
-      "en": [
-        "Post-Redirect Rules"
-      ],
-      "zh-CN": [
-        "重定向后规则"
-      ]
-    },
-    "fields": {
-      "en": [
-        "Fields"
-      ],
-      "zh-CN": [
-        "字段"
-      ]
-    },
-    "initialization_rules": {
-      "en": [
-        "Initialization Rules"
-      ],
-      "zh-CN": [
-        "初始化规则"
-      ]
-    },
-    "derivation_rules": {
-      "en": [
-        "Derivation Rules"
-      ],
-      "zh-CN": [
-        "派生规则"
-      ]
-    },
-    "update_rules": {
-      "en": [
-        "Update Rules"
-      ],
-      "zh-CN": [
-        "更新规则"
-      ]
-    },
-    "runtime_guarantees": {
-      "en": [
-        "Runtime Guarantees"
-      ],
-      "zh-CN": [
-        "运行时保障"
-      ]
-    },
-    "entity": {
-      "en": [
-        "Entity"
-      ],
-      "zh-CN": [
-        "实体"
-      ]
-    },
-    "seed_data": {
-      "en": [
-        "Seed Data"
-      ],
-      "zh-CN": [
-        "种子数据"
-      ]
-    },
-    "purpose": {
-      "en": [
-        "Purpose"
-      ],
-      "zh-CN": [
-        "目的"
-      ]
-    },
-    "canonical_extraction_rules": {
-      "en": [
-        "Canonical Extraction Rules"
-      ],
-      "zh-CN": [
-        "规范抽取规则"
-      ]
-    },
-    "derived_toc_rules": {
-      "en": [
-        "Derived TOC Rules"
-      ],
-      "zh-CN": [
-        "目录派生规则"
-      ]
-    },
-    "scenario": {
-      "en": [
-        "Scenario"
-      ],
-      "zh-CN": [
-        "场景"
-      ]
-    },
-    "navigation": {
-      "en": [
-        "Navigation"
-      ],
-      "zh-CN": [
-        "导航"
-      ]
-    },
-    "common_actions": {
-      "en": [
-        "Common Actions"
-      ],
-      "zh-CN": [
-        "常用操作"
-      ]
-    },
-    "docs": {
-      "en": [
-        "Docs"
-      ],
-      "zh-CN": [
-        "文档"
-      ]
-    },
-    "home": {
-      "en": [
-        "Home"
-      ],
-      "zh-CN": [
-        "首页"
-      ]
-    },
-    "brand_intent": {
-      "en": [
-        "Brand Intent"
-      ],
-      "zh-CN": [
-        "品牌意图"
-      ]
-    },
-    "theme_tokens": {
-      "en": [
-        "Theme Tokens"
-      ],
-      "zh-CN": [
-        "主题令牌"
-      ]
-    },
-    "typography": {
-      "en": [
-        "Typography"
-      ],
-      "zh-CN": [
-        "排版"
-      ]
-    },
-    "layout_rules": {
-      "en": [
-        "Layout Rules"
-      ],
-      "zh-CN": [
-        "布局规则"
-      ]
-    },
-    "spacing_scale": {
-      "en": [
-        "Spacing Scale"
-      ],
-      "zh-CN": [
-        "间距尺度"
-      ]
-    },
-    "product_identity": {
-      "en": [
-        "Product Identity"
-      ],
-      "zh-CN": [
-        "产品标识"
-      ]
-    },
-    "global_rules": {
-      "en": [
-        "Global Rules"
-      ],
-      "zh-CN": [
-        "全局规则"
-      ]
-    },
-    "information_architecture": {
-      "en": [
-        "Information Architecture"
-      ],
-      "zh-CN": [
-        "信息架构"
-      ]
-    },
-    "architecture_scope": {
-      "en": [
-        "Architecture Scope"
-      ],
-      "zh-CN": [
-        "架构范围"
-      ]
-    },
-    "state_management": {
-      "en": [
-        "State Management"
-      ],
-      "zh-CN": [
-        "状态管理"
-      ]
-    },
-    "rendering_strategy": {
-      "en": [
-        "Rendering Strategy"
-      ],
-      "zh-CN": [
-        "渲染策略"
-      ]
-    },
-    "event_orchestration": {
-      "en": [
-        "Event Orchestration"
-      ],
-      "zh-CN": [
-        "事件编排"
-      ]
-    },
-    "boundary_rules": {
-      "en": [
-        "Boundary Rules"
-      ],
-      "zh-CN": [
-        "边界规则"
-      ]
-    },
-    "data_bindings": {
-      "en": [
-        "Data Bindings"
-      ],
-      "zh-CN": [
-        "数据绑定"
-      ]
-    },
-    "empty_states": {
-      "en": [
-        "Empty States"
-      ],
-      "zh-CN": [
-        "空态"
-      ]
-    },
-    "accessibility": {
-      "en": [
-        "Accessibility"
-      ],
-      "zh-CN": [
-        "可访问性"
-      ]
-    },
-    "telemetry": {
-      "en": [
-        "Telemetry"
-      ],
-      "zh-CN": [
-        "埋点与遥测"
-      ]
-    },
-    "props_contract": {
-      "en": [
-        "Props Contract"
-      ],
-      "zh-CN": [
-        "属性契约"
-      ]
-    },
-    "slots": {
-      "en": [
-        "Slots"
-      ],
-      "zh-CN": [
-        "插槽"
-      ]
-    },
-    "side_effects": {
-      "en": [
-        "Side Effects"
-      ],
-      "zh-CN": [
-        "副作用"
-      ]
-    },
-    "failure_handling": {
-      "en": [
-        "Failure Handling"
-      ],
-      "zh-CN": [
-        "异常处理"
-      ]
-    },
-    "output": {
-      "en": [
-        "Output"
-      ],
-      "zh-CN": [
-        "输出"
-      ]
-    },
-    "ownership": {
-      "en": [
-        "Ownership"
-      ],
-      "zh-CN": [
-        "归属"
-      ]
-    },
-    "constraints": {
-      "en": [
-        "Constraints"
-      ],
-      "zh-CN": [
-        "约束"
-      ]
-    },
-    "persistence": {
-      "en": [
-        "Persistence"
-      ],
-      "zh-CN": [
-        "持久化"
-      ]
-    },
-    "relations": {
-      "en": [
-        "Relations"
-      ],
-      "zh-CN": [
-        "关系"
-      ]
-    },
-    "indexes": {
-      "en": [
-        "Indexes"
-      ],
-      "zh-CN": [
-        "索引"
-      ]
-    },
-    "setup": {
-      "en": [
-        "Setup"
-      ],
-      "zh-CN": [
-        "前置准备"
-      ]
-    },
-    "assertions": {
-      "en": [
-        "Assertions"
-      ],
-      "zh-CN": [
-        "断言"
-      ]
-    },
-    "cleanup": {
-      "en": [
-        "Cleanup"
-      ],
-      "zh-CN": [
-        "清理"
-      ]
-    },
-    "pages": {
-      "en": [
-        "Pages"
-      ],
-      "zh-CN": [
-        "页面"
-      ]
-    },
-    "components": {
-      "en": [
-        "Components"
-      ],
-      "zh-CN": [
-        "组件"
-      ]
-    },
-    "errors": {
-      "en": [
-        "Errors"
-      ],
-      "zh-CN": [
-        "错误文案"
-      ]
-    },
-    "formatting": {
-      "en": [
-        "Formatting"
-      ],
-      "zh-CN": [
-        "格式化规则"
-      ]
-    },
-    "motion": {
-      "en": [
-        "Motion"
-      ],
-      "zh-CN": [
-        "动效"
-      ]
-    },
-    "component_tokens": {
-      "en": [
-        "Component Tokens"
-      ],
-      "zh-CN": [
-        "组件令牌"
-      ]
-    },
-    "iconography": {
-      "en": [
-        "Iconography"
-      ],
-      "zh-CN": [
-        "图标规范"
-      ]
-    },
-    "security_model": {
-      "en": [
-        "Security Model"
-      ],
-      "zh-CN": [
-        "安全模型"
-      ]
-    },
-    "dependency_governance": {
-      "en": [
-        "Dependency Governance"
-      ],
-      "zh-CN": [
-        "依赖治理"
-      ]
-    },
-    "observability": {
-      "en": [
-        "Observability"
-      ],
-      "zh-CN": [
-        "可观测性"
-      ]
-    },
-    "core_rules": {
-      "en": [
-        "Core Rules"
-      ],
-      "zh-CN": [
-        "核心规则"
-      ]
-    },
-    "boundary_with_manifest": {
-      "en": [
-        "Boundary with manifest.yaml"
-      ],
-      "zh-CN": [
-        "与 manifest.yaml 的边界"
-      ]
-    },
-    "current_constraints": {
-      "en": [
-        "Current Constraints"
-      ],
-      "zh-CN": [
-        "当前约束"
-      ]
-    },
-    "selection_policy": {
-      "en": [
-        "Selection Policy"
-      ],
-      "zh-CN": [
-        "选型策略"
-      ]
-    },
-    "security_license_baseline": {
-      "en": [
-        "Security & License Baseline"
-      ],
-      "zh-CN": [
-        "安全与许可证基线"
-      ]
-    },
-    "scope": {
-      "en": [
-        "Scope"
-      ],
-      "zh-CN": [
-        "范围"
-      ]
-    },
-    "architecture": {
-      "en": [
-        "Architecture"
-      ],
-      "zh-CN": [
-        "架构"
-      ]
-    },
-    "non_goals": {
-      "en": [
-        "Non-goals"
-      ],
-      "zh-CN": [
-        "非目标"
-      ]
-    },
-    "quick_start": {
-      "en": [
-        "Quick Start"
-      ],
-      "zh-CN": [
-        "快速开始"
-      ]
-    },
-    "objective": {
-      "en": [
-        "Objective"
-      ],
-      "zh-CN": [
-        "目标"
-      ]
-    },
-    "input_contract": {
-      "en": [
-        "Input Contract"
-      ],
-      "zh-CN": [
-        "输入契约"
-      ]
-    },
-    "output_contract": {
-      "en": [
-        "Output Contract"
-      ],
-      "zh-CN": [
-        "输出契约"
-      ]
-    },
-    "safety_constraints": {
-      "en": [
-        "Safety Constraints"
-      ],
-      "zh-CN": [
-        "安全约束"
-      ]
-    },
-    "few_shot": {
-      "en": [
-        "Few-shot Examples"
-      ],
-      "zh-CN": [
-        "少样本示例"
-      ]
+  "authoring_rules": {
+    "aliases": [
+      {
+        "source_file_type_id": "views.pages",
+        "source_section_key": "trigger",
+        "target_file_type_id": "logic",
+        "target_section_key": "trigger",
+        "labels": [
+          "Logic.Trigger"
+        ],
+        "title_aliases": [
+          "Logic.Trigger",
+          "Logic Trigger",
+          "Logic_Trigger"
+        ]
+      },
+      {
+        "source_file_type_id": "views.pages",
+        "source_section_key": "input",
+        "target_file_type_id": "logic",
+        "target_section_key": "input",
+        "labels": [
+          "Logic.Input"
+        ],
+        "title_aliases": [
+          "Logic.Input",
+          "Logic Input",
+          "Logic_Input"
+        ]
+      },
+      {
+        "source_file_type_id": "views.pages",
+        "source_section_key": "output",
+        "target_file_type_id": "logic",
+        "target_section_key": "output",
+        "labels": [
+          "Logic.Output"
+        ],
+        "title_aliases": [
+          "Logic.Output",
+          "Logic Output",
+          "Logic_Output"
+        ]
+      },
+      {
+        "source_file_type_id": "views.pages",
+        "source_section_key": "fields",
+        "target_file_type_id": "state",
+        "target_section_key": "fields",
+        "labels": [
+          "State.Fields"
+        ],
+        "title_aliases": [
+          "State.Fields",
+          "State Fields",
+          "State_Fields"
+        ]
+      },
+      {
+        "source_file_type_id": "views.pages",
+        "source_section_key": "constraints",
+        "target_file_type_id": "state",
+        "target_section_key": "constraints",
+        "labels": [
+          "State.Constraints"
+        ],
+        "title_aliases": [
+          "State.Constraints",
+          "State Constraints",
+          "State_Constraints"
+        ]
+      },
+      {
+        "source_file_type_id": "views.pages",
+        "source_section_key": "update_rules",
+        "target_file_type_id": "state",
+        "target_section_key": "update_rules",
+        "labels": [
+          "State.UpdateRules"
+        ],
+        "title_aliases": [
+          "State.UpdateRules",
+          "State UpdateRules",
+          "State_UpdateRules"
+        ]
+      }
+    ]
+  },
+  "authoring_token_rules": {
+    "control_token": {
+      "enabled": true,
+      "formats": [
+        "@iwp",
+        "@no-iwp",
+        "@iwp(file=<file_type_id>,section=<section_key>)",
+        "@iwp(kind=<file_type_id>.<section_key>)"
+      ],
+      "kind_unknown_policy_default": "warn"
     }
   },
+  "section_i18n": {},
   "file_type_schemas": [
     {
       "id": "views.pages",
       "path_patterns": [
+        "pages/**/*.md",
+        "pages/*.md",
         "views/pages/**/*.md",
         "views/pages/*.md"
       ],
       "sections": [
         {
           "key": "layout_tree",
-          "required": true
+          "required": false
         },
         {
           "key": "interaction_hooks",
-          "required": true
+          "required": false
         },
         {
           "key": "display_rules",
@@ -704,7 +182,7 @@
       "sections": [
         {
           "key": "layout",
-          "required": true
+          "required": false
         },
         {
           "key": "interaction_hooks",
@@ -737,15 +215,15 @@
       "sections": [
         {
           "key": "trigger",
-          "required": true
+          "required": false
         },
         {
           "key": "guard_rules",
-          "required": true
+          "required": false
         },
         {
           "key": "post_redirect_rules",
-          "required": true
+          "required": false
         },
         {
           "key": "execution_flow",
@@ -777,7 +255,7 @@
       "sections": [
         {
           "key": "trigger",
-          "required": true
+          "required": false
         },
         {
           "key": "input",
@@ -785,7 +263,7 @@
         },
         {
           "key": "execution_flow",
-          "required": true
+          "required": false
         },
         {
           "key": "guard_rules",
@@ -817,7 +295,7 @@
       "sections": [
         {
           "key": "fields",
-          "required": true
+          "required": false
         },
         {
           "key": "ownership",
@@ -861,7 +339,7 @@
         },
         {
           "key": "entity",
-          "required": true
+          "required": false
         },
         {
           "key": "constraints",
@@ -897,7 +375,7 @@
       "sections": [
         {
           "key": "scenario",
-          "required": true
+          "required": false
         },
         {
           "key": "setup",
@@ -920,6 +398,9 @@
     {
       "id": "locales",
       "path_patterns": [
+        "pages/**/locales/**/*.md",
+        "pages/**/locales/*.md",
+        "locales/**/*.md",
         "locales/*.md"
       ],
       "sections": [
@@ -969,7 +450,7 @@
         },
         {
           "key": "theme_tokens",
-          "required": true
+          "required": false
         },
         {
           "key": "typography",
@@ -1005,23 +486,23 @@
       "sections": [
         {
           "key": "product_identity",
-          "required": true
+          "required": false
         },
         {
           "key": "global_rules",
-          "required": true
+          "required": false
         },
         {
           "key": "information_architecture",
-          "required": true
+          "required": false
         },
         {
           "key": "runtime_guarantees",
-          "required": true
+          "required": false
         },
         {
           "key": "security_model",
-          "required": true
+          "required": false
         }
       ]
     },
@@ -1033,19 +514,19 @@
       "sections": [
         {
           "key": "architecture_scope",
-          "required": true
+          "required": false
         },
         {
           "key": "state_management",
-          "required": true
+          "required": false
         },
         {
           "key": "rendering_strategy",
-          "required": true
+          "required": false
         },
         {
           "key": "event_orchestration",
-          "required": true
+          "required": false
         },
         {
           "key": "dependency_governance",
@@ -1059,8 +540,7 @@
           "key": "boundary_rules",
           "required": false
         }
-      ],
-      "allow_unknown_sections": true
+      ]
     },
     {
       "id": "governance.dependency",
@@ -1070,11 +550,11 @@
       "sections": [
         {
           "key": "purpose",
-          "required": true
+          "required": false
         },
         {
           "key": "core_rules",
-          "required": true
+          "required": false
         },
         {
           "key": "boundary_with_manifest",
@@ -1092,8 +572,7 @@
           "key": "security_license_baseline",
           "required": false
         }
-      ],
-      "allow_unknown_sections": true
+      ]
     },
     {
       "id": "prompts",
@@ -1104,7 +583,7 @@
       "sections": [
         {
           "key": "objective",
-          "required": true
+          "required": false
         },
         {
           "key": "input_contract",

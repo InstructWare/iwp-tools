@@ -28,6 +28,9 @@ def build_node_catalog(config: LintConfig) -> dict[str, Any]:
         exclude_markdown_globs=config.schema_exclude_markdown_globs,
         node_registry_file=config.node_registry_file,
         node_id_min_length=config.node_id_min_length,
+        page_only_enabled=config.page_only.enabled,
+        authoring_tokens_enabled=config.authoring.tokens.enabled,
+        node_generation_mode=config.authoring.node_generation_mode,
     )
     entries = [
         NodeCatalogEntry(

@@ -76,6 +76,7 @@ flowchart LR
 - 输出：
   - full payload：`--json`（`summary`、`compile`、`intent_diff`、`gap_report`、`checkpoint`）
   - reconcile payload：`session reconcile --json`（agent 收敛与执行上下文）
+  - 当启用 `schema.page_only.enabled` 时，build summary 输出 `page_only_enabled` 模式标识（便于运行时解释 mixed-source 节点）
 
 ## 5. 核心流程
 

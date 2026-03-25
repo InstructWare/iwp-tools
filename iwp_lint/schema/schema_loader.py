@@ -4,7 +4,7 @@ import json
 from importlib.resources import files
 from pathlib import Path
 
-from .schema_models import FileTypeSchema, SchemaProfile
+from .schema_models import AuthoringAliasSpec, FileTypeSchema, SchemaProfile
 
 
 def load_schema_profile(schema_source: Path | str) -> SchemaProfile:
@@ -15,6 +15,10 @@ def load_schema_profile(schema_source: Path | str) -> SchemaProfile:
     kind_rules = raw.get("kind_rules", {})
     marker_rules = raw.get("marker_rules", {})
     text_marker_rules = marker_rules.get("text_marker", {})
+    authoring_rules = raw.get("authoring_rules", {})
+    authoring_aliases = [
+        AuthoringAliasSpec.from_dict(item) for item in authoring_rules.get("aliases", [])
+    ]
     section_i18n_raw = raw.get("section_i18n", {})
     section_i18n = {
         str(key): {
@@ -28,6 +32,7 @@ def load_schema_profile(schema_source: Path | str) -> SchemaProfile:
         mode_default=str(modes.get("default", "compat")),
         supported_modes=[str(item) for item in modes.get("supported", ["compat", "strict"])],
         h1_required_exactly_one=bool(global_rules.get("h1_required_exactly_one", True)),
+        enforce_required_sections=bool(global_rules.get("enforce_required_sections", True)),
         h2_unknown_policy={
             "compat": str(global_rules.get("h2_unknown_policy", {}).get("compat", "warn")),
             "strict": str(global_rules.get("h2_unknown_policy", {}).get("strict", "error")),
@@ -40,6 +45,7 @@ def load_schema_profile(schema_source: Path | str) -> SchemaProfile:
         text_marker_allowed_sections=[
             str(item) for item in text_marker_rules.get("allowed_sections", [])
         ],
+        authoring_aliases=authoring_aliases,
     )
 
 

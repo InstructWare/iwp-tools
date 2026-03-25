@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from iwp_lint.config import load_config
+from iwp_lint.config import load_config, resolve_schema_source
 from iwp_lint.parsers.md_parser import parse_markdown_nodes
 from iwp_lint.vcs.snapshot_store import SnapshotStore, collect_workspace_files
 
@@ -193,13 +193,15 @@ def assert_build_diff_contract(
 def write_links_for_source(workspace: Path, source_path: str) -> list[str]:
     config_path = workspace / ".iwp-lint.yaml"
     config = load_config(str(config_path))
-    schema_path = (workspace / config.schema_file).resolve()
+    schema_path = resolve_schema_source(config)
     nodes = parse_markdown_nodes(
         iwp_root=config.iwp_root_path,
         critical_patterns=config.critical_node_patterns,
         schema_path=schema_path,
         exclude_markdown_globs=config.schema_exclude_markdown_globs,
         node_registry_file=config.node_registry_file,
+        page_only_enabled=config.page_only.enabled,
+        authoring_tokens_enabled=config.authoring.tokens.enabled,
     )
     filtered = [node for node in nodes if node.source_path == source_path]
     lines = [f"// @iwp.link {node.source_path}::{node.node_id}" for node in filtered]

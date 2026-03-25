@@ -31,6 +31,10 @@ Scenario names map to workflow events and edge cases:
 - `bootstrap_no_baseline_no_links`
 - `compiled_stale_or_missing`
 - `i18n_zh_en`
+- `page_only_namespaced`
+
+`page_only_namespaced` is a dedicated fixture for `schema.page_only.enabled=true`.
+It validates namespaced H2 sections (`Logic.*`, `State.*`) in `views/pages/*.md`.
 
 Test entry points:
 

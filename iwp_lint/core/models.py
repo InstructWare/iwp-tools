@@ -15,6 +15,8 @@ class MarkdownNode:
     computed_kind: str
     anchor_level: str = "default"
     is_critical: bool = False
+    trace_required: bool = False
+    trace_source: str = "default_policy"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

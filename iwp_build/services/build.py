@@ -102,6 +102,7 @@ def run_build(
     baseline_bootstrapped = False
     summary = {
         "build_mode": build_mode,
+        "page_only_enabled": bool(getattr(getattr(config, "page_only", None), "enabled", False)),
         "baseline_bootstrapped": baseline_bootstrapped,
         "compiled_count": int(compile_result.get("compiled_count", 0)),
         "removed_count": int(compile_result.get("removed_count", 0)),
@@ -124,6 +125,9 @@ def run_build(
     )
     print_console_report(gap_report)
     full_payload = {
+        "mode_flags": {
+            "page_only_enabled": bool(getattr(getattr(config, "page_only", None), "enabled", False))
+        },
         "summary": summary,
         "normalize": normalize_result,
         "compile": compile_result,
