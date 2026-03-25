@@ -6,7 +6,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from ..config import LintConfig
+from ..config import LintConfig, resolve_schema_source
+from ..parsers.md_parser import parse_markdown_nodes
 from ..schema.schema_validator import list_markdown_rel_paths
 from ..versioning import IWC_MD_META_VERSION, SUPPORTED_IWC_JSON_VERSIONS
 
@@ -18,9 +19,7 @@ def verify_compiled_context(
     config: LintConfig,
     source_paths: list[str] | None = None,
 ) -> dict[str, object]:
-    all_sources = list_markdown_rel_paths(
-        config.iwp_root_path, config.schema_exclude_markdown_globs
-    )
+    all_sources = _expected_compiled_sources(config)
     normalized_sources = [item.strip() for item in (source_paths or []) if item and item.strip()]
     if normalized_sources:
         source_set = set(normalized_sources)
@@ -109,6 +108,26 @@ def verify_compiled_context(
         "stale_files": sorted(set(stale_files)),
         "invalid_files": sorted(set(invalid_files)),
     }
+
+
+def _expected_compiled_sources(config: LintConfig) -> list[str]:
+    node_generation_mode = str(getattr(config.authoring, "node_generation_mode", "structural")).strip()
+    if node_generation_mode == "annotated_only":
+        schema_path = resolve_schema_source(config)
+        nodes = parse_markdown_nodes(
+            config.iwp_root_path,
+            config.critical_node_patterns,
+            schema_path,
+            critical_granularity=config.critical_granularity,
+            exclude_markdown_globs=config.schema_exclude_markdown_globs,
+            node_registry_file=config.node_registry_file,
+            node_id_min_length=config.node_id_min_length,
+            page_only_enabled=config.page_only.enabled,
+            authoring_tokens_enabled=config.authoring.tokens.enabled,
+            node_generation_mode=config.authoring.node_generation_mode,
+        )
+        return sorted({node.source_path for node in nodes})
+    return list_markdown_rel_paths(config.iwp_root_path, config.schema_exclude_markdown_globs)
 
 
 def _compiled_root(config: LintConfig) -> Path:

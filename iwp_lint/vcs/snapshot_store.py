@@ -58,6 +58,15 @@ class SnapshotStore:
                 )
                 conn.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS baseline_state (
+                        id INTEGER PRIMARY KEY CHECK(id = 1),
+                        current_snapshot_id INTEGER,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS sessions (
                         session_id TEXT PRIMARY KEY,
                         status TEXT NOT NULL,
@@ -86,8 +95,51 @@ class SnapshotStore:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id)"
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS checkpoints (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        snapshot_id INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        session_id TEXT,
+                        baseline_snapshot_id INTEGER,
+                        gate_status TEXT NOT NULL,
+                        message TEXT,
+                        metadata_json TEXT,
+                        FOREIGN KEY (snapshot_id) REFERENCES snapshots(id),
+                        FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+                    )
+                    """
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_checkpoints_snapshot_id ON checkpoints(snapshot_id)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_checkpoints_created_at ON checkpoints(created_at)"
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS history_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_type TEXT NOT NULL,
+                        payload_json TEXT,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_history_events_created_at ON history_events(created_at)"
+                )
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO baseline_state(id, current_snapshot_id, updated_at)
+                    VALUES (1, NULL, ?)
+                    """,
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
 
-    def create_snapshot(self, files: list[SnapshotFile]) -> int:
+    def create_snapshot(self, files: list[SnapshotFile], *, set_as_baseline: bool = True) -> int:
         self.ensure()
         with closing(sqlite3.connect(self.db_path)) as conn:
             with conn:
@@ -117,21 +169,174 @@ class SnapshotStore:
                         for item in files
                     ],
                 )
+                if set_as_baseline:
+                    conn.execute(
+                        """
+                        UPDATE baseline_state
+                        SET current_snapshot_id = ?, updated_at = ?
+                        WHERE id = 1
+                        """,
+                        (snapshot_id, datetime.now(timezone.utc).isoformat()),
+                    )
             return snapshot_id
 
     def latest_snapshot_id(self) -> int | None:
         self.ensure()
         with closing(sqlite3.connect(self.db_path)) as conn:
-            row = conn.execute("SELECT MAX(id) FROM snapshots").fetchone()
+            row = conn.execute(
+                "SELECT current_snapshot_id FROM baseline_state WHERE id = 1"
+            ).fetchone()
         if not row or row[0] is None:
-            return None
+            with closing(sqlite3.connect(self.db_path)) as conn:
+                fallback = conn.execute("SELECT MAX(id) FROM snapshots").fetchone()
+            if not fallback or fallback[0] is None:
+                return None
+            return int(fallback[0])
         return int(row[0])
 
-    def latest_snapshot_info(self) -> dict[str, int | str] | None:
+    def set_current_snapshot_id(self, snapshot_id: int | None) -> None:
+        self.ensure()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with conn:
+                conn.execute(
+                    """
+                    UPDATE baseline_state
+                    SET current_snapshot_id = ?, updated_at = ?
+                    WHERE id = 1
+                    """,
+                    (snapshot_id, datetime.now(timezone.utc).isoformat()),
+                )
+
+    def latest_checkpoint(self) -> dict[str, object] | None:
         self.ensure()
         with closing(sqlite3.connect(self.db_path)) as conn:
             row = conn.execute(
-                "SELECT id, created_at FROM snapshots ORDER BY id DESC LIMIT 1"
+                """
+                SELECT id, snapshot_id, created_at, source, session_id,
+                       baseline_snapshot_id, gate_status, message, metadata_json
+                FROM checkpoints
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "checkpoint_id": int(row[0]),
+            "snapshot_id": int(row[1]),
+            "created_at": str(row[2]),
+            "source": str(row[3]),
+            "session_id": str(row[4]) if row[4] is not None else None,
+            "baseline_snapshot_id": int(row[5]) if row[5] is not None else None,
+            "gate_status": str(row[6]),
+            "message": str(row[7] or ""),
+            "metadata": json.loads(row[8]) if row[8] else {},
+        }
+
+    def create_checkpoint(
+        self,
+        *,
+        snapshot_id: int,
+        source: str,
+        session_id: str | None = None,
+        baseline_snapshot_id: int | None = None,
+        gate_status: str = "unknown",
+        message: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> int:
+        self.ensure()
+        now = datetime.now(timezone.utc).isoformat()
+        metadata_json = json.dumps(metadata or {}, ensure_ascii=False)
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with conn:
+                cur = conn.execute(
+                    """
+                    INSERT INTO checkpoints(
+                        snapshot_id, created_at, source, session_id,
+                        baseline_snapshot_id, gate_status, message, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        snapshot_id,
+                        now,
+                        source,
+                        session_id,
+                        baseline_snapshot_id,
+                        gate_status,
+                        message or "",
+                        metadata_json,
+                    ),
+                )
+                if cur.lastrowid is None:
+                    raise RuntimeError("failed to create checkpoint row")
+                return int(cur.lastrowid)
+
+    def get_checkpoint(self, checkpoint_id: int) -> dict[str, object] | None:
+        self.ensure()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            row = conn.execute(
+                """
+                SELECT id, snapshot_id, created_at, source, session_id,
+                       baseline_snapshot_id, gate_status, message, metadata_json
+                FROM checkpoints
+                WHERE id = ?
+                """,
+                (checkpoint_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "checkpoint_id": int(row[0]),
+            "snapshot_id": int(row[1]),
+            "created_at": str(row[2]),
+            "source": str(row[3]),
+            "session_id": str(row[4]) if row[4] is not None else None,
+            "baseline_snapshot_id": int(row[5]) if row[5] is not None else None,
+            "gate_status": str(row[6]),
+            "message": str(row[7] or ""),
+            "metadata": json.loads(row[8]) if row[8] else {},
+        }
+
+    def list_checkpoints(self, *, limit: int | None = None) -> list[dict[str, object]]:
+        self.ensure()
+        query = """
+            SELECT id, snapshot_id, created_at, source, session_id,
+                   baseline_snapshot_id, gate_status, message, metadata_json
+            FROM checkpoints
+            ORDER BY id DESC
+        """
+        params: tuple[object, ...] = ()
+        if limit is not None and limit > 0:
+            query += " LIMIT ?"
+            params = (int(limit),)
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            rows = conn.execute(query, params).fetchall()
+        items: list[dict[str, object]] = []
+        for row in rows:
+            items.append(
+                {
+                    "checkpoint_id": int(row[0]),
+                    "snapshot_id": int(row[1]),
+                    "created_at": str(row[2]),
+                    "source": str(row[3]),
+                    "session_id": str(row[4]) if row[4] is not None else None,
+                    "baseline_snapshot_id": int(row[5]) if row[5] is not None else None,
+                    "gate_status": str(row[6]),
+                    "message": str(row[7] or ""),
+                    "metadata": json.loads(row[8]) if row[8] else {},
+                }
+            )
+        return items
+
+    def latest_snapshot_info(self) -> dict[str, int | str] | None:
+        snapshot_id = self.latest_snapshot_id()
+        if snapshot_id is None:
+            return None
+        self.ensure()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            row = conn.execute(
+                "SELECT id, created_at FROM snapshots WHERE id = ? LIMIT 1",
+                (snapshot_id,),
             ).fetchone()
         if not row:
             return None
@@ -308,6 +513,105 @@ class SnapshotStore:
                 }
             )
         return events
+
+    def append_history_event(
+        self,
+        event_type: str,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        self.ensure()
+        now = datetime.now(timezone.utc).isoformat()
+        payload_json = json.dumps(payload or {}, ensure_ascii=False)
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO history_events(event_type, payload_json, created_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (event_type, payload_json, now),
+                )
+
+    def history_stats(self) -> dict[str, int]:
+        self.ensure()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS checkpoint_count,
+                    COUNT(DISTINCT snapshot_id) AS referenced_snapshots
+                FROM checkpoints
+                """
+            ).fetchone()
+            size_row = conn.execute(
+                """
+                SELECT COALESCE(SUM(size), 0)
+                FROM snapshot_files
+                WHERE snapshot_id IN (SELECT snapshot_id FROM checkpoints)
+                """
+            ).fetchone()
+        return {
+            "checkpoint_count": int(row[0] if row and row[0] is not None else 0),
+            "referenced_snapshots": int(row[1] if row and row[1] is not None else 0),
+            "referenced_bytes": int(size_row[0] if size_row and size_row[0] is not None else 0),
+        }
+
+    def snapshot_sizes_by_id(self) -> dict[int, int]:
+        self.ensure()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            rows = conn.execute(
+                """
+                SELECT snapshot_id, COALESCE(SUM(size), 0)
+                FROM snapshot_files
+                GROUP BY snapshot_id
+                """
+            ).fetchall()
+        return {int(snapshot_id): int(total) for snapshot_id, total in rows}
+
+    def delete_checkpoints_and_orphan_snapshots(self, checkpoint_ids: list[int]) -> list[int]:
+        self.ensure()
+        removed_snapshots: list[int] = []
+        placeholders = ",".join("?" for _ in checkpoint_ids)
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with conn:
+                rows = conn.execute(
+                    f"SELECT snapshot_id FROM checkpoints WHERE id IN ({placeholders})",
+                    tuple(checkpoint_ids),
+                ).fetchall()
+                snapshot_ids = {int(row[0]) for row in rows}
+                conn.execute(
+                    f"DELETE FROM checkpoints WHERE id IN ({placeholders})",
+                    tuple(checkpoint_ids),
+                )
+                current_snapshot_id_row = conn.execute(
+                    "SELECT current_snapshot_id FROM baseline_state WHERE id = 1"
+                ).fetchone()
+                current_snapshot_id = (
+                    int(current_snapshot_id_row[0])
+                    if current_snapshot_id_row and current_snapshot_id_row[0] is not None
+                    else None
+                )
+                for snapshot_id in sorted(snapshot_ids):
+                    if current_snapshot_id is not None and snapshot_id == current_snapshot_id:
+                        continue
+                    in_checkpoint = conn.execute(
+                        "SELECT 1 FROM checkpoints WHERE snapshot_id = ? LIMIT 1",
+                        (snapshot_id,),
+                    ).fetchone()
+                    in_session = conn.execute(
+                        """
+                        SELECT 1 FROM sessions
+                        WHERE baseline_id_before = ? OR baseline_id_after = ?
+                        LIMIT 1
+                        """,
+                        (snapshot_id, snapshot_id),
+                    ).fetchone()
+                    if in_checkpoint is not None or in_session is not None:
+                        continue
+                    conn.execute("DELETE FROM snapshot_files WHERE snapshot_id = ?", (snapshot_id,))
+                    conn.execute("DELETE FROM snapshots WHERE id = ?", (snapshot_id,))
+                    removed_snapshots.append(snapshot_id)
+        return removed_snapshots
 
 
 def collect_workspace_files(

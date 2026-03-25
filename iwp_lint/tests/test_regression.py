@@ -14,6 +14,7 @@ from iwp_build.cli import (
 from iwp_build.output import collect_remediation_hints
 from iwp_lint.cli import _print_nodes_result
 from iwp_lint.config import (
+    AuthoringConfig,
     DEFAULT_CODE_EXCLUDE_GLOBS,
     LintConfig,
     LintThresholds,
@@ -847,6 +848,37 @@ class IwpLintRegressionTests(unittest.TestCase):
             verify_result = verify_compiled_context(config)
             self.assertTrue(verify_result["ok"])
             self.assertEqual(verify_result["checked_sources"], 1)
+
+    def test_verify_iwc_annotated_only_accepts_non_annotated_markdown_sources(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(
+                iwp_root / "views/pages/home.md",
+                "# Home\n\n## Layout Tree @iwp\n- Hero @iwp\n",
+            )
+            _write(
+                iwp_root / "views/pages/locales/en.md",
+                "# Home Copy\n\n- title: Home\n",
+            )
+            config = LintConfig(
+                project_root=root.resolve(),
+                iwp_root="InstructWare.iw",
+                schema_file="schema.json",
+                node_registry_file=DEFAULT_NODE_REGISTRY_FILE,
+                node_catalog_file=DEFAULT_NODE_CATALOG_FILE,
+                compiled_dir=".iwp/compiled",
+                authoring=AuthoringConfig(node_generation_mode="annotated_only"),
+            )
+            compile_result = compile_node_context(config)
+            self.assertEqual(compile_result["compiled_count"], 1)
+
+            verify_result = verify_compiled_context(config)
+            self.assertTrue(verify_result["ok"])
+            self.assertEqual(verify_result["checked_sources"], 1)
+            self.assertEqual(verify_result["missing_files"], [])
 
     def test_verify_iwc_detects_invalid_node_shape(self) -> None:
         with _workspace_tmpdir() as td:

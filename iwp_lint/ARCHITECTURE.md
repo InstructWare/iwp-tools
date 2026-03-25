@@ -47,6 +47,7 @@ flowchart LR
   ENG --> CP["core/coverage_policy.py\nCoverage/profile thresholds"]
   ENG --> LV["core/link_validation.py\nlink->node mapping diagnostics"]
   API --> SES["core/session_service.py\nsession start/diff/commit/current/audit"]
+  API --> HIS["core/history_service.py\ncheckpoint list/restore/prune orchestration"]
 
   ENG --> OUT["console + json report"]
 ```
@@ -74,6 +75,7 @@ flowchart LR
 - `core/coverage_policy.py`：覆盖率阈值、tiny-diff 与 profile 规则
 - `core/link_validation.py`：注释链接对账与 `IWP103/IWP105` 诊断
 - `core/link_normalizer.py`：`@iwp.link` 清理与规范化（stale/重复移除、块内排序与标准格式重写）
+- `core/history_service.py`：history list/restore/prune 编排（预检、dry-run、恢复前安全点、保留策略）
 
 ## 3. 关键数据模型
 
@@ -121,7 +123,13 @@ flowchart LR
   - `hunks`
   - `hunks_truncated`
 
-## 4. 三条执行路径
+### 3.6 Checkpoint / Baseline 状态（`vcs/snapshot_store.py`）
+
+- `baseline_state.current_snapshot_id`：当前 baseline 指针（恢复后会切换）
+- `checkpoints`：可回滚检查点元信息（`source/session_id/baseline_snapshot_id/gate_status`）
+- `history_events`：restore/prune 事件链（`restore_dry_run` / `restore_applied` / `restore_blocked` / `prune_done`）
+
+## 4. 执行路径与运行能力
 
 ## 4.1 `full` 模式
 
@@ -204,6 +212,18 @@ flowchart TD
 ## 4.5 `schema` 模式
 
 仅执行 markdown schema 校验，不执行链接覆盖率逻辑。
+
+## 4.6 `history` 模式（API 内部能力）
+
+`history` 是非 Git 的历史回滚能力，供 `iwp-build history *` 消费：
+
+- `history_list`：列出 checkpoint 与当前 baseline
+- `history_restore`：
+  - 支持 `dry_run` 预览影响清单
+  - 默认脏工作区阻断，`force` 才允许覆盖
+  - 可选自动创建 `restore_before_apply` 安全点
+  - 恢复后返回 `next_required_actions`（`verify` / `session reconcile`）
+- `history_prune`：按保留策略清理历史 checkpoint 与孤儿 snapshot
 
 ## 5. Node ID 稳定策略（重点）
 
@@ -312,9 +332,12 @@ flowchart LR
 - `session_start(config, ...)`
 - `session_current(config)`
 - `session_diff(config, ..., code_diff_level=None, code_diff_context_lines=None, code_diff_max_chars=None)`
-- `session_commit(config, ..., enforce_gate=True)`
+- `session_commit(config, ..., enforce_gate=True, message=None)`
 - `session_gate(config, ..., session_id)`
 - `session_audit(config, ..., session_id)`
+- `history_list(config, ..., limit=None, include_stats=True)`
+- `history_restore(config, ..., to_checkpoint_id, dry_run=False, force=False)`
+- `history_prune(config, ..., max_snapshots=None, max_days=None, max_bytes=None)`
 
 规则：
 
@@ -346,6 +369,7 @@ flowchart LR
 ```bash
 python -m unittest iwp_lint.tests.test_regression
 python -m unittest iwp_lint.tests.test_session_service
+python -m unittest iwp_lint.tests.test_history_service
 python -m iwp_lint schema --config .iwp-lint.yaml
 python -m iwp_lint full --config .iwp-lint.yaml
 ```
@@ -355,3 +379,4 @@ python -m iwp_lint full --config .iwp-lint.yaml
 - 构造“重排列表”“文案微调”“跨语言文档”场景做回归
 - 检查 `.iwp/node_registry.v1.json` 是否符合预期演化
 - 检查 `.iwp/cache/snapshots.sqlite` 与 `.iwp/compiled/` 产物是否符合预期
+- 检查 `history list/restore/prune` 的事件链与 checkpoint 保留是否符合预期

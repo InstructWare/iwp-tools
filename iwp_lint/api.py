@@ -5,6 +5,7 @@ from typing import Any
 
 from .config import LintConfig, resolve_schema_source
 from .core.engine import run_full
+from .core.history_service import HistoryService
 from .core.link_normalizer import normalize_links
 from .core.models import MarkdownNode
 from .core.node_catalog import (
@@ -183,6 +184,7 @@ def session_commit(
     session_id: str,
     enforce_gate: bool = True,
     allow_stale_sidecar: bool = False,
+    message: str | None = None,
     code_diff_level: str | None = None,
     code_diff_context_lines: int | None = None,
     code_diff_max_chars: int | None = None,
@@ -199,6 +201,7 @@ def session_commit(
         session_id=session_id,
         enforce_gate=enforce_gate,
         allow_stale_sidecar=allow_stale_sidecar,
+        message=message,
         code_diff_level=code_diff_level,
         code_diff_context_lines=code_diff_context_lines,
         code_diff_max_chars=code_diff_max_chars,
@@ -229,6 +232,50 @@ def session_audit(config: LintConfig, *, session_id: str) -> dict[str, Any]:
 def session_current(config: LintConfig) -> dict[str, Any]:
     service = SessionService(config)
     return service.current()
+
+
+def history_list(
+    config: LintConfig,
+    *,
+    limit: int | None = None,
+    include_stats: bool = True,
+) -> dict[str, Any]:
+    service = HistoryService(config)
+    return service.list_checkpoints(limit=limit, include_stats=include_stats)
+
+
+def history_restore(
+    config: LintConfig,
+    *,
+    to_checkpoint_id: int,
+    dry_run: bool = False,
+    force: bool = False,
+    actor: str | None = None,
+    message: str | None = None,
+) -> dict[str, Any]:
+    service = HistoryService(config)
+    return service.restore(
+        to_checkpoint_id=to_checkpoint_id,
+        dry_run=dry_run,
+        force=force,
+        actor=actor,
+        message=message,
+    )
+
+
+def history_prune(
+    config: LintConfig,
+    *,
+    max_snapshots: int | None = None,
+    max_days: int | None = None,
+    max_bytes: int | None = None,
+) -> dict[str, Any]:
+    service = HistoryService(config)
+    return service.prune(
+        max_snapshots=max_snapshots,
+        max_days=max_days,
+        max_bytes=max_bytes,
+    )
 
 
 def _compute_impacted_nodes(config: LintConfig, diff) -> list[MarkdownNode]:

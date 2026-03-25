@@ -108,7 +108,7 @@ def add_session_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
 
     session_commit_cmd = session_sub.add_parser(
         "commit",
-        help="Run gate and atomically advance baseline (the only baseline writer)",
+        help="Run gate and atomically advance baseline as a regular commit checkpoint",
     )
     session_commit_cmd.add_argument(
         "--config", help="Path to .iwp-lint.yaml or .json", default=None
@@ -132,6 +132,11 @@ def add_session_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
         "--allow-stale-sidecar",
         action="store_true",
         help="Allow commit even when code sidecar freshness check fails",
+    )
+    session_commit_cmd.add_argument(
+        "--message",
+        default=None,
+        help="Checkpoint message recorded in history list",
     )
     session_commit_cmd.add_argument(
         "--code-diff-level",

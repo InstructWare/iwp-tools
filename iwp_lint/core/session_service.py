@@ -377,6 +377,7 @@ class SessionService:
         *,
         enforce_gate: bool = True,
         allow_stale_sidecar: bool = False,
+        message: str | None = None,
         code_diff_level: str | None = None,
         code_diff_context_lines: int | None = None,
         code_diff_max_chars: int | None = None,
@@ -504,7 +505,21 @@ class SessionService:
             code_exclude_globs=self._config.code_exclude_globs,
             exclude_markdown_globs=self._config.schema_exclude_markdown_globs,
         )
+        commit_message = (message or "").strip() or "session commit baseline checkpoint"
         baseline_after = self._store.create_snapshot(files)
+        checkpoint_id = self._store.create_checkpoint(
+            snapshot_id=baseline_after,
+            source="session_commit",
+            session_id=session_id,
+            baseline_snapshot_id=(
+                cast(int, session["baseline_id_before"])
+                if session.get("baseline_id_before") is not None
+                else None
+            ),
+            gate_status=("pass" if gate_status != "FAIL" else "fail"),
+            message=commit_message,
+            metadata={"status": "committed"},
+        )
         self._store.update_session(
             session_id,
             status="committed",
@@ -514,7 +529,12 @@ class SessionService:
         self._store.append_session_event(
             session_id,
             "session_committed",
-            {"baseline_id_after": baseline_after, "file_count": len(files)},
+            {
+                "baseline_id_after": baseline_after,
+                "file_count": len(files),
+                "checkpoint_id": checkpoint_id,
+                "message": commit_message,
+            },
         )
         commit_payload = {
             "session_id": session_id,
@@ -522,6 +542,8 @@ class SessionService:
             "gate_status": gate_status,
             "baseline_id_before": session.get("baseline_id_before"),
             "baseline_id_after": baseline_after,
+            "checkpoint_id": checkpoint_id,
+            "checkpoint_message": commit_message,
             "file_count": len(files),
             "sidecar_fresh": sidecar_fresh,
             "compiled_at": sidecar_compiled_at,

@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from .commands.build_args import add_build_parser
+from .commands.history_args import add_history_parser
 from .commands.option_resolver import (
+    HistoryOptions,
     SessionOptions,
     resolve_build_options,
+    resolve_history_options,
     resolve_session_options,
     resolve_verify_options,
 )
@@ -24,6 +27,9 @@ from .services.watch import run_watch
 try:
     from iwp_lint.api import (
         compile_context,
+        history_list,
+        history_prune,
+        history_restore,
         normalize_annotations,
         session_audit,
         session_commit,
@@ -36,6 +42,9 @@ try:
 except ImportError:
     from ..iwp_lint.api import (
         compile_context,
+        history_list,
+        history_prune,
+        history_restore,
         normalize_annotations,
         session_audit,
         session_commit,
@@ -57,6 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_verify_parser(sub)
     add_watch_parser(sub)
     add_session_parser(sub)
+    add_history_parser(sub)
     return parser
 
 
@@ -99,6 +109,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "session":
             options = resolve_session_options(args, config=config)
             return _run_session(config=config, options=options)
+        if args.command == "history":
+            options = resolve_history_options(args, config=config)
+            return _run_history(config=config, options=options)
         raise RuntimeError(f"unknown command: {args.command}")
     except RuntimeError as exc:
         print(f"[iwp-build] error: {exc}")
@@ -154,6 +167,21 @@ class SessionActionResult:
 SessionHandler = Callable[[SessionActionContext], SessionActionResult]
 
 
+@dataclass(frozen=True)
+class HistoryActionContext:
+    config: Any
+    options: HistoryOptions
+
+
+@dataclass(frozen=True)
+class HistoryActionResult:
+    payload: dict[str, object]
+    exit_code: int | None = None
+
+
+HistoryHandler = Callable[[HistoryActionContext], HistoryActionResult]
+
+
 def _run_session(config: Any, options: SessionOptions) -> int:
     action = options.action
     handlers = _build_session_handlers()
@@ -196,6 +224,45 @@ def _run_session(config: Any, options: SessionOptions) -> int:
     return result.exit_code if result.exit_code is not None else 0
 
 
+def _run_history(config: Any, options: HistoryOptions) -> int:
+    action = options.action
+    handlers = _build_history_handlers()
+    handler = handlers.get(action)
+    if handler is None:
+        raise RuntimeError(f"unknown history action: {action}")
+    result = handler(HistoryActionContext(config=config, options=options))
+    payload = result.payload
+    written = None
+    if options.json_path:
+        written = write_json(options.json_path, payload)
+    print(f"[iwp-build] history action={action} status={payload.get('status', 'ok')}")
+    if action == "list":
+        print(
+            "[iwp-build] history list "
+            f"count={safe_len(payload.get('checkpoints'))} "
+            f"current_baseline_snapshot_id={payload.get('current_baseline_snapshot_id')}"
+        )
+    if action == "restore":
+        plan = payload.get("plan")
+        target_id = plan.get("target_checkpoint_id", "n/a") if isinstance(plan, dict) else "n/a"
+        print(
+            "[iwp-build] history restore "
+            f"target={target_id} "
+            f"result={payload.get('status', 'n/a')}"
+        )
+    if action == "prune":
+        print(
+            "[iwp-build] history prune "
+            f"removed={safe_len(payload.get('removed_checkpoint_ids'))} "
+            f"kept={safe_len(payload.get('kept_checkpoint_ids'))}"
+        )
+    if written:
+        print(f"[iwp-build] history json path={written}")
+    if action == "restore" and str(payload.get("status")) == "blocked":
+        return 1
+    return result.exit_code if result.exit_code is not None else 0
+
+
 def _build_session_handlers() -> dict[str, SessionHandler]:
     return {
         "start": _handle_session_start,
@@ -205,6 +272,14 @@ def _build_session_handlers() -> dict[str, SessionHandler]:
         "audit": _handle_session_audit,
         "reconcile": _handle_session_reconcile,
         "normalize_links": _handle_session_normalize_links,
+    }
+
+
+def _build_history_handlers() -> dict[str, HistoryHandler]:
+    return {
+        "list": _handle_history_list,
+        "restore": _handle_history_restore,
+        "prune": _handle_history_prune,
     }
 
 
@@ -276,6 +351,7 @@ def _handle_session_commit(ctx: SessionActionContext) -> SessionActionResult:
         config=config,
         session_id=resolved_session_id,
         allow_stale_sidecar=options.allow_stale_sidecar,
+        message=options.commit_message,
         code_diff_level=options.code_diff_level,
         code_diff_context_lines=options.code_diff_context_lines,
         code_diff_max_chars=options.code_diff_max_chars,
@@ -347,6 +423,41 @@ def _handle_session_normalize_links(ctx: SessionActionContext) -> SessionActionR
         "normalize": normalize,
     }
     return SessionActionResult(payload=payload)
+
+
+def _handle_history_list(ctx: HistoryActionContext) -> HistoryActionResult:
+    options = ctx.options
+    payload = history_list(
+        config=ctx.config,
+        limit=options.limit,
+        include_stats=True,
+    )
+    return HistoryActionResult(payload=payload)
+
+
+def _handle_history_restore(ctx: HistoryActionContext) -> HistoryActionResult:
+    options = ctx.options
+    if options.to_checkpoint_id is None:
+        raise RuntimeError("--to is required for history restore")
+    payload = history_restore(
+        config=ctx.config,
+        to_checkpoint_id=int(options.to_checkpoint_id),
+        dry_run=options.dry_run,
+        force=options.force,
+        actor="iwp-build",
+    )
+    return HistoryActionResult(payload=payload)
+
+
+def _handle_history_prune(ctx: HistoryActionContext) -> HistoryActionResult:
+    options = ctx.options
+    payload = history_prune(
+        config=ctx.config,
+        max_snapshots=options.max_snapshots,
+        max_days=options.max_days,
+        max_bytes=options.max_bytes,
+    )
+    return HistoryActionResult(payload=payload)
 
 
 def _resolve_session_id(

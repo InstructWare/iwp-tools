@@ -79,6 +79,26 @@ class SessionConfig:
 
 
 @dataclass
+class HistoryRetentionConfig:
+    max_snapshots: int = 200
+    max_days: int = 30
+    max_bytes: int = 2147483648
+
+
+@dataclass
+class HistorySafetyConfig:
+    block_restore_on_dirty: bool = True
+    auto_checkpoint_before_restore: bool = True
+
+
+@dataclass
+class HistoryConfig:
+    enabled: bool = True
+    retention: HistoryRetentionConfig = field(default_factory=HistoryRetentionConfig)
+    safety: HistorySafetyConfig = field(default_factory=HistorySafetyConfig)
+
+
+@dataclass
 class PageOnlyConfig:
     enabled: bool = False
 
@@ -187,6 +207,7 @@ class LintConfig:
     compiled_dir: str = ".iwp/compiled"
     code_sidecar: CodeSidecarConfig = field(default_factory=CodeSidecarConfig)
     session: SessionConfig = field(default_factory=SessionConfig)
+    history: HistoryConfig = field(default_factory=HistoryConfig)
     execution_presets: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
@@ -222,6 +243,9 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
     tiny_diff_raw = raw.get("tiny_diff", {})
     profiles_raw = raw.get("coverage_profiles", [])
     session_raw = raw.get("session", {})
+    history_raw = raw.get("history", {})
+    history_retention_raw = history_raw.get("retention", {})
+    history_safety_raw = history_raw.get("safety", {})
     config_dir = config_path.parent
     root_raw = raw.get("project_root")
     if root_raw is None:
@@ -331,6 +355,22 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
             max_diagnostics_items=max(1, int(session_raw.get("max_diagnostics_items", 20))),
             baseline_gap_max_items=max(1, int(session_raw.get("baseline_gap_max_items", 20))),
             warning_summary_top_n=max(1, int(session_raw.get("warning_summary_top_n", 2))),
+        ),
+        history=HistoryConfig(
+            enabled=bool(history_raw.get("enabled", True)),
+            retention=HistoryRetentionConfig(
+                max_snapshots=max(1, int(history_retention_raw.get("max_snapshots", 200))),
+                max_days=max(1, int(history_retention_raw.get("max_days", 30))),
+                max_bytes=max(1, int(history_retention_raw.get("max_bytes", 2147483648))),
+            ),
+            safety=HistorySafetyConfig(
+                block_restore_on_dirty=bool(
+                    history_safety_raw.get("block_restore_on_dirty", True)
+                ),
+                auto_checkpoint_before_restore=bool(
+                    history_safety_raw.get("auto_checkpoint_before_restore", True)
+                ),
+            ),
         ),
         execution_presets=_load_execution_presets(raw.get("execution_presets", {})),
     )

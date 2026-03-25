@@ -144,6 +144,9 @@ from iwp_lint.config import load_config
 from iwp_lint.api import (
     build_code_sidecar,
     compile_context,
+    history_list,
+    history_prune,
+    history_restore,
     run_gate_suite,
     run_quality_gate,
     session_gate,
@@ -161,7 +164,10 @@ suite = run_gate_suite(config)
 session = session_start(config)
 intent = session_diff(config, session_id=session["session_id"])
 gate = session_gate(config, session_id=session["session_id"])
-session_commit(config, session_id=session["session_id"])
+session_commit(config, session_id=session["session_id"], message="agent: align links and tests")
+history = history_list(config, limit=20)
+preview = history_restore(config, to_checkpoint_id=42, dry_run=True)
+history_prune(config)
 build_code_sidecar(config)
 ```
 
@@ -172,7 +178,7 @@ Primary API module:
 ## Diff Source
 
 `diff` compares current workspace against the latest filesystem snapshot baseline.
-Baseline checkpoints are managed by `iwp-build build`.
+Build 保持只读，不推进 baseline。常规 baseline 推进由 `session_commit` 完成；历史切换由 `history_restore` 完成。
 
 Snapshot internals are exposed through library API for orchestrators.
 
@@ -192,6 +198,12 @@ Session workflow (non-git, baseline-aware):
   - suggested trace targets (`<source_path>::<node_id>`)
   - density warnings for suspiciously high link concentration
 - `session_commit` runs gate suite and atomically advances baseline only on pass
+  - optional `message` is persisted to checkpoint metadata for history timeline display
+- `history_list` returns checkpoint timeline and optional storage stats
+- `history_restore` supports dry-run preview and force restore under dirty workspace
+  - default safety: block on dirty workspace
+  - optional safety checkpoint: `restore_before_apply`
+- `history_prune` applies retention policy and keeps protected checkpoints
 
 ## Node Registry and Catalog
 
@@ -254,6 +266,15 @@ session:
   max_text_lines: 200
   max_hint_items: 20
   max_diagnostics_items: 20
+history:
+  enabled: true
+  retention:
+    max_snapshots: 200
+    max_days: 30
+    max_bytes: 2147483648
+  safety:
+    block_restore_on_dirty: true
+    auto_checkpoint_before_restore: true
 
 execution_presets:
   agent-default:

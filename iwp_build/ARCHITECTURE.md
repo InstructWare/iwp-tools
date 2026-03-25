@@ -7,7 +7,7 @@
 `iwp-build` 是 IWP 的编排层（orchestrator），负责把 `iwp_lint` 的能力组织成可执行工作流。
 
 - 目标：
-  - 提供统一入口：`build` / `verify` / `watch` / `session *`
+  - 提供统一入口：`build` / `verify` / `watch` / `session *` / `history *`
   - 把“编译上下文、意图差异、实现缺口、基线推进”串成检查点流程
   - 输出 agent 可消费 JSON（build full + session reconcile）
 - 非目标：
@@ -22,6 +22,7 @@ flowchart LR
   CLI["cli.py\n命令路由与参数解析"] --> BS["build_service.py\nbuild 检查点编排"]
   CLI --> VS["verify_service.py\ncompiled + lint + tests"]
   CLI --> WS["watch.py\n本地增量编译循环"]
+  CLI --> HS["history命令\ncheckpoint list/restore/prune"]
   CLI --> OF["output_formatter.py\nJSON压缩与诊断渲染"]
 
   BS --> API["iwp_lint.api\n稳定库接口"]
@@ -38,6 +39,7 @@ flowchart LR
 - `cli.py`
   - 唯一命令入口，负责参数定义、子命令分发、错误提示
   - 统一支持 `--config` 与 session diff 参数透传（`code-diff-level/context/max-chars`）
+  - 提供 history 子命令编排（`list/restore/prune`）
 - `build_service.py`
   - `run_build(...)` 主编排函数
   - 负责 build 只读构建生命周期：
@@ -61,6 +63,7 @@ flowchart LR
 - `tests/`
   - `test_build_commit.py`：build 只读语义 + commit 单写 baseline 语义
   - `test_session_cli.py`：session CLI 路径与参数透传
+  - `test_history_cli.py`：history list/restore/prune CLI 路径与阻断语义
   - `test_watch.py`：watch 的变更检测与防抖行为
   - `test_e2e_suite.py` + `e2e/*`：端到端回归场景
 
@@ -71,7 +74,7 @@ flowchart LR
   - `InstructWare.iw/**/*.md`
   - 代码注释链接 `@iwp.link ...`
 - 中间状态：
-  - `.iwp/cache/snapshots.sqlite`（baseline + sessions + events）
+  - `.iwp/cache/snapshots.sqlite`（baseline_state + sessions + checkpoints + history_events）
   - `.iwp/compiled/**`（`.iwc` 编译产物）
 - 输出：
   - full payload：`--json`（`summary`、`compile`、`intent_diff`、`gap_report`、`checkpoint`）
@@ -108,7 +111,8 @@ flowchart TD
 
 - `mode=auto` 优先走 diff；无 baseline 时回退 `bootstrap_full`
 - `build` 成功/失败都不推进 baseline（无状态副作用）
-- baseline 唯一写入入口为 `session commit`
+- 常规 baseline 推进入口为 `session commit`
+- `history restore` 可把当前 baseline 指针切换到历史 checkpoint
 
 ## 5.2 Verify 交付流程
 
@@ -155,11 +159,36 @@ flowchart LR
 - `session diff/reconcile/commit` 在未传 `--session-id` 时会优先回退到 current open session
 - `session diff` 支持 `summary/hunk` 两级代码差异输出
 - `session start` 支持 `--if-missing` 幂等引导：有活动会话时直接复用
+- `session commit` 支持可选 `--message`，用于写入 checkpoint 历史摘要
 - `session reconcile` 支持可选 `normalize-links`，执行顺序为 `diff -> (optional normalize) -> gate`
 - `session reconcile --auto-build-sidecar` 在 sidecar stale 时执行受控刷新（`compile_context + build_code_sidecar`）后继续判定
 - `session normalize-links` 提供 session 语义入口，内部委托链接规范化写入
 
-## 5.4 Watch 本地循环流程
+## 5.4 History 子命令流程
+
+```mermaid
+flowchart LR
+  histCli[historySubcommand] --> histPick{action}
+  histPick -->|list| histList[historyList]
+  histPick -->|restore| histRestore[historyRestore]
+  histPick -->|prune| histPrune[historyPrune]
+  histRestore --> histGate{dirty workspace & !force}
+  histGate -->|yes| histBlocked[restoreBlocked]
+  histGate -->|no| histApply[applyRestoreAndSwitchBaseline]
+  histList --> histJson[writeJsonOptional]
+  histBlocked --> histJson
+  histApply --> histJson
+  histPrune --> histJson
+```
+
+说明：
+
+- `history restore --dry-run` 只输出影响清单，不改写文件
+- `history restore` 默认脏工作区阻断，`--force` 才允许覆盖
+- restore 可自动创建 `restore_before_apply` 安全点
+- restore 成功返回下一步建议（`verify` / `session reconcile`）
+
+## 5.5 Watch 本地循环流程
 
 ```mermaid
 flowchart TD
@@ -188,7 +217,7 @@ flowchart TD
 ## 6. 设计约束与稳定性约定
 
 - 单一真相来源：规则与 diff 语义全部来自 `iwp_lint`，`iwp_build` 只做编排
-- baseline 推进约束：仅 `session commit` 可推进
+- baseline 约束：`build` 只读；常规推进由 `session commit`；历史切换由 `history restore`
 - 人机双消费：
   - 控制台输出用于本地诊断
   - JSON 输出用于 agent/runtime 自动消费
@@ -198,6 +227,7 @@ flowchart TD
 - 新增 build 子流程：优先放在 `build_service.py`，保持 `cli.py` 仅路由
 - 新增 JSON 字段：统一在 `output_formatter.py` 收口
 - 新增会话参数：仅在 `session *` 子命令链路透传
+- 新增历史参数：仅在 `history *` 子命令链路透传
 - 新增回归场景：优先放 `tests/e2e/`，保持行为导向断言
 
 ## 8. 维护检查清单
@@ -216,3 +246,9 @@ uv run python -m unittest iwp_build.tests.test_e2e_suite
 - `session reconcile --json` 中 `intent_diff` / `next_actions` / `diagnostics_top` 字段是否完整
 - `session diff --code-diff-level hunk` 输出是否受 `max-chars` 控制
 - 失败路径下 baseline 是否保持不变
+
+若改动了 history/restore 语义，额外检查：
+
+- `history restore --dry-run` 与 apply 结果字段是否一致
+- 脏工作区阻断与 `--force` 放行语义是否符合预期
+- `history prune` 是否保留最新 checkpoint 与最近 `restore_before_apply`

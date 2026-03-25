@@ -48,9 +48,23 @@ class SessionOptions:
     quiet_warnings: bool
     suggest_fixes: bool
     allow_stale_sidecar: bool
+    commit_message: str | None
     warning_top_n: int | None
     if_missing: bool
     auto_build_sidecar: bool
+
+
+@dataclass(frozen=True)
+class HistoryOptions:
+    action: str
+    json_path: str | None
+    limit: int | None
+    to_checkpoint_id: int | None
+    dry_run: bool
+    force: bool
+    max_snapshots: int | None
+    max_days: int | None
+    max_bytes: int | None
 
 
 def get_preset_command_options(
@@ -269,9 +283,58 @@ def resolve_session_options(args: argparse.Namespace, *, config: Any) -> Session
         or bool(preset_opts.get("suggest_fixes", False)),
         allow_stale_sidecar=bool(getattr(args, "allow_stale_sidecar", False))
         or bool(preset_opts.get("allow_stale_sidecar", False)),
+        commit_message=pick_value(
+            getattr(args, "message", None),
+            preset_opts.get("message"),
+            fallback=None,
+        ),
         warning_top_n=warning_top_n,
         if_missing=bool(getattr(args, "if_missing", False))
         or bool(preset_opts.get("if_missing", False)),
         auto_build_sidecar=bool(getattr(args, "auto_build_sidecar", False))
         or bool(preset_opts.get("auto_build_sidecar", False)),
+    )
+
+
+def resolve_history_options(args: argparse.Namespace, *, config: Any) -> HistoryOptions:
+    action = str(args.history_action)
+    preset_opts = get_preset_command_options(
+        config=config,
+        preset_name=getattr(args, "preset", None),
+        command_key=f"history_{action}",
+    )
+    return HistoryOptions(
+        action=action,
+        json_path=pick_value(
+            getattr(args, "json", None),
+            preset_opts.get("json"),
+            fallback=None,
+        ),
+        limit=pick_value(
+            getattr(args, "limit", None),
+            preset_opts.get("limit"),
+            fallback=None,
+        ),
+        to_checkpoint_id=pick_value(
+            getattr(args, "to", None),
+            preset_opts.get("to"),
+            fallback=None,
+        ),
+        dry_run=bool(getattr(args, "dry_run", False)) or bool(preset_opts.get("dry_run", False)),
+        force=bool(getattr(args, "force", False)) or bool(preset_opts.get("force", False)),
+        max_snapshots=pick_value(
+            getattr(args, "max_snapshots", None),
+            preset_opts.get("max_snapshots"),
+            fallback=None,
+        ),
+        max_days=pick_value(
+            getattr(args, "max_days", None),
+            preset_opts.get("max_days"),
+            fallback=None,
+        ),
+        max_bytes=pick_value(
+            getattr(args, "max_bytes", None),
+            preset_opts.get("max_bytes"),
+            fallback=None,
+        ),
     )
