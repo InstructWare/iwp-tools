@@ -222,8 +222,10 @@ def _run_core(
         is_trace_required_uncovered = (
             node.trace_required and (node.source_path, node.node_id) not in linked_node_keys
         )
-        severity = "error" if is_trace_required_uncovered else (
-            profile.missing_severity if profile is not None else "error"
+        severity = (
+            "error"
+            if is_trace_required_uncovered
+            else (profile.missing_severity if profile is not None else "error")
         )
         diagnostics.append(
             Diagnostic(
@@ -235,7 +237,9 @@ def _run_core(
             )
         )
     kind_unknown_nodes = [node for node in target_nodes if node.section_key == "unknown_section"]
-    kind_unknown_severity = "error" if config.authoring.kind_unknown_policy == "error" else "warning"
+    kind_unknown_severity = (
+        "error" if config.authoring.kind_unknown_policy == "error" else "warning"
+    )
     for node in kind_unknown_nodes:
         diagnostics.append(
             Diagnostic(

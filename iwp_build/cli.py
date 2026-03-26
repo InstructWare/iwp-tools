@@ -246,9 +246,7 @@ def _run_history(config: Any, options: HistoryOptions) -> int:
         plan = payload.get("plan")
         target_id = plan.get("target_checkpoint_id", "n/a") if isinstance(plan, dict) else "n/a"
         print(
-            "[iwp-build] history restore "
-            f"target={target_id} "
-            f"result={payload.get('status', 'n/a')}"
+            f"[iwp-build] history restore target={target_id} result={payload.get('status', 'n/a')}"
         )
     if action == "prune":
         print(

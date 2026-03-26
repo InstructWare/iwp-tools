@@ -111,7 +111,9 @@ def verify_compiled_context(
 
 
 def _expected_compiled_sources(config: LintConfig) -> list[str]:
-    node_generation_mode = str(getattr(config.authoring, "node_generation_mode", "structural")).strip()
+    node_generation_mode = str(
+        getattr(config.authoring, "node_generation_mode", "structural")
+    ).strip()
     if node_generation_mode == "annotated_only":
         schema_path = resolve_schema_source(config)
         nodes = parse_markdown_nodes(

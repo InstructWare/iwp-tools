@@ -50,14 +50,23 @@ uvx instructware-tools iwp-build --help
 
 ## Local development
 
+Run all quality commands from the `tools` directory.
+
 ```bash
 uv sync --group dev
-uv run ruff check iwp_lint iwp_build test
-uv run ruff format --check iwp_lint iwp_build test
+make quality
 uv run python -m pyright iwp_lint iwp_build test
 uv run python -m unittest iwp_lint.tests.test_regression
 uv run python -m unittest iwp_build.tests.test_e2e_suite
 uv run python -m unittest iwp_lint.tests.test_e2e_suite
+```
+
+If your current directory is repository root, use:
+
+```bash
+cd tools
+uv sync --group dev --frozen
+make quality
 ```
 
 ## Build releases

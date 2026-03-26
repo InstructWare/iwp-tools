@@ -104,9 +104,7 @@ class IwpBuildHistoryCliTests(unittest.TestCase):
             )
             _write(
                 link_file,
-                "\n".join(
-                    f"// @iwp.link architecture.md::{item.node_id}" for item in updated_nodes
-                )
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in updated_nodes)
                 + "\n",
             )
             self.assertEqual(main(["session", "start", "--config", str(config_path)]), 0)

@@ -133,7 +133,8 @@ def _parse_one_file(
             level = len(heading_match.group(1))
             raw_title = heading_match.group(2).strip()
             title, heading_control = parse_iwp_control_token(
-                raw_title, enabled=bool(getattr(context.semantic_context, "authoring_tokens_enabled", True))
+                raw_title,
+                enabled=bool(getattr(context.semantic_context, "authoring_tokens_enabled", True)),
             )
             title = title or raw_title
             heading_resolution = None
@@ -176,7 +177,9 @@ def _parse_one_file(
                 else current_section_trace_required
             )
             trace_source = (
-                heading_resolution.trace_source if heading_resolution is not None else "section_token"
+                heading_resolution.trace_source
+                if heading_resolution is not None
+                else "section_token"
             )
             if _should_emit_node(
                 node_generation_mode=node_generation_mode, trace_required=trace_required
@@ -319,7 +322,9 @@ def _parse_one_file(
                     )
                     node_id = registry.assign_uid(signature, pending_override)
                     pending_override = None
-                    title_is_critical = _is_critical(heading_stack[-1][1], context.critical_patterns)
+                    title_is_critical = _is_critical(
+                        heading_stack[-1][1], context.critical_patterns
+                    )
                     text_is_critical = _is_critical(text_line, context.critical_patterns)
                     if context.critical_granularity == "title_only":
                         is_critical = text_is_critical

@@ -16,7 +16,9 @@ class HistoryService:
         self._db_path = (config.project_root / config.snapshot_db_file).resolve()
         self._store = SnapshotStore(self._db_path)
 
-    def list_checkpoints(self, *, limit: int | None = None, include_stats: bool = True) -> dict[str, Any]:
+    def list_checkpoints(
+        self, *, limit: int | None = None, include_stats: bool = True
+    ) -> dict[str, Any]:
         checkpoints = self._store.list_checkpoints(limit=limit)
         payload: dict[str, Any] = {
             "snapshot_db_path": self._db_path.as_posix(),
@@ -190,9 +192,8 @@ class HistoryService:
                 kept_snapshots += 1
                 byte_acc += size
                 continue
-            if (
-                kept_snapshots < max(1, resolved_max_snapshots)
-                and byte_acc + size <= max(1, resolved_max_bytes)
+            if kept_snapshots < max(1, resolved_max_snapshots) and byte_acc + size <= max(
+                1, resolved_max_bytes
             ):
                 keep_ids.append(checkpoint_id)
                 kept_snapshots += 1
@@ -250,9 +251,7 @@ class HistoryService:
             else {}
         )
         workspace_map = {item.path: item for item in current_workspace_files}
-        dirty_files = sorted(
-            set(self._compute_changed_paths(baseline_snapshot, workspace_map))
-        )
+        dirty_files = sorted(set(self._compute_changed_paths(baseline_snapshot, workspace_map)))
         target_snapshot = self._store.load_snapshot(target_snapshot_id)
         to_write: list[dict[str, Any]] = []
         to_delete: list[str] = []

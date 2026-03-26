@@ -305,7 +305,9 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
                 scope=str(tokens_raw.get("scope", "global")),
             ),
             node_generation_mode=_load_node_generation_mode(
-                authoring_raw.get("node_generation_mode", raw.get("node_generation_mode", "structural"))
+                authoring_raw.get(
+                    "node_generation_mode", raw.get("node_generation_mode", "structural")
+                )
             ),
             kind_unknown_policy=_load_kind_unknown_policy(
                 authoring_raw.get("kind_unknown_policy", "warn")
@@ -364,9 +366,7 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
                 max_bytes=max(1, int(history_retention_raw.get("max_bytes", 2147483648))),
             ),
             safety=HistorySafetyConfig(
-                block_restore_on_dirty=bool(
-                    history_safety_raw.get("block_restore_on_dirty", True)
-                ),
+                block_restore_on_dirty=bool(history_safety_raw.get("block_restore_on_dirty", True)),
                 auto_checkpoint_before_restore=bool(
                     history_safety_raw.get("auto_checkpoint_before_restore", True)
                 ),

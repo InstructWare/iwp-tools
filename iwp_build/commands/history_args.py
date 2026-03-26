@@ -48,10 +48,10 @@ def add_history_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     history_restore_cmd.add_argument("--json", help="Write payload JSON to path", default=None)
     history_restore_cmd.set_defaults(command="history", history_action="restore")
 
-    history_prune_cmd = history_sub.add_parser("prune", help="Prune checkpoints by retention policy")
-    history_prune_cmd.add_argument(
-        "--config", help="Path to .iwp-lint.yaml or .json", default=None
+    history_prune_cmd = history_sub.add_parser(
+        "prune", help="Prune checkpoints by retention policy"
     )
+    history_prune_cmd.add_argument("--config", help="Path to .iwp-lint.yaml or .json", default=None)
     history_prune_cmd.add_argument(
         "--preset",
         default=None,
