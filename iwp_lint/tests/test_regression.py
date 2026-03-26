@@ -8,14 +8,12 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from iwp_build.cli import (
-    build_parser as build_build_parser,
-)
+from iwp_build.cli import build_parser as build_build_parser
 from iwp_build.output import collect_remediation_hints
 from iwp_lint.cli import _print_nodes_result
 from iwp_lint.config import (
-    AuthoringConfig,
     DEFAULT_CODE_EXCLUDE_GLOBS,
+    AuthoringConfig,
     LintConfig,
     LintThresholds,
     ModeThresholds,

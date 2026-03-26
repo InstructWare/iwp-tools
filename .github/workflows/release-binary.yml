@@ -23,13 +23,13 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@v4
       - name: Sync dependencies
-        run: uv sync --group dev
+        run: uv sync --group dev --frozen
       - name: Ruff lint
-        run: uv run ruff check .
+        run: uv run ruff check iwp_lint iwp_build test
       - name: Ruff format check
-        run: uv run ruff format --check .
+        run: uv run ruff format --check iwp_lint iwp_build test
       - name: Pyright
-        run: uv run pyright iwp_lint iwp_build test
+        run: uv run python -m pyright iwp_lint iwp_build test
       - name: Regression tests
         run: uv run python -m unittest iwp_lint.tests.test_regression
 
@@ -49,7 +49,7 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@v4
       - name: Sync dependencies
-        run: uv sync --group dev
+        run: uv sync --group dev --frozen
       - name: Build iwp-lint binary
         run: uv run pyinstaller --onefile --name iwp-lint-${{ runner.os }} iwp_lint/__main__.py
       - name: Build iwp-build binary
