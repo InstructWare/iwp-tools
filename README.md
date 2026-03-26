@@ -55,7 +55,7 @@ Run all quality commands from the `tools` directory.
 ```bash
 uv sync --group dev
 make quality
-uv run python -m pyright iwp_lint iwp_build test
+make typecheck
 uv run python -m unittest iwp_lint.tests.test_regression
 uv run python -m unittest iwp_build.tests.test_e2e_suite
 uv run python -m unittest iwp_lint.tests.test_e2e_suite
@@ -67,6 +67,7 @@ If your current directory is repository root, use:
 cd tools
 uv sync --group dev --frozen
 make quality
+make typecheck
 ```
 
 ## Build releases

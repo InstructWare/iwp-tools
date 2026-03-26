@@ -158,10 +158,10 @@ class HistoryService:
                 "removed_snapshot_ids": [],
                 "kept_checkpoint_ids": [],
             }
-        latest_checkpoint_id = int(rows[0]["checkpoint_id"])
+        latest_checkpoint_id = self._require_int(rows[0]["checkpoint_id"], field="checkpoint_id")
         latest_restore_before_id = next(
             (
-                int(item["checkpoint_id"])
+                self._require_int(item["checkpoint_id"], field="checkpoint_id")
                 for item in rows
                 if str(item.get("source", "")) == "restore_before_apply"
             ),
@@ -176,8 +176,8 @@ class HistoryService:
         snapshot_sizes = self._store.snapshot_sizes_by_id()
         kept_snapshots = 0
         for item in rows:
-            checkpoint_id = int(item["checkpoint_id"])
-            snapshot_id = int(item["snapshot_id"])
+            checkpoint_id = self._require_int(item["checkpoint_id"], field="checkpoint_id")
+            snapshot_id = self._require_int(item["snapshot_id"], field="snapshot_id")
             created_at_text = str(item["created_at"])
             try:
                 created_at = datetime.fromisoformat(created_at_text)
@@ -243,7 +243,7 @@ class HistoryService:
         checkpoint = self._store.get_checkpoint(target_checkpoint_id)
         if checkpoint is None:
             raise RuntimeError(f"checkpoint not found: {target_checkpoint_id}")
-        target_snapshot_id = int(checkpoint["snapshot_id"])
+        target_snapshot_id = self._require_int(checkpoint["snapshot_id"], field="snapshot_id")
         current_baseline_id = self._store.latest_snapshot_id()
         baseline_snapshot = (
             self._store.load_snapshot(current_baseline_id)
@@ -274,6 +274,19 @@ class HistoryService:
             "to_write": sorted(to_write, key=lambda item: str(item["path"])),
             "to_delete": sorted(to_delete),
         }
+
+    @staticmethod
+    def _require_int(value: object, *, field: str) -> int:
+        if isinstance(value, bool):
+            raise RuntimeError(f"{field} is not a valid integer value")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError as exc:
+                raise RuntimeError(f"{field} is not a valid integer value") from exc
+        raise RuntimeError(f"{field} is not a valid integer value")
 
     @staticmethod
     def _compute_changed_paths(

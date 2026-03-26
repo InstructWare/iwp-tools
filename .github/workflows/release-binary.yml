@@ -26,8 +26,8 @@ jobs:
         run: uv sync --group dev --frozen
       - name: Ruff quality
         run: make quality
-      - name: Pyright
-        run: uv run python -m pyright iwp_lint iwp_build test
+      - name: Typecheck
+        run: make typecheck
       - name: Regression tests
         run: uv run python -m unittest iwp_lint.tests.test_regression
 
