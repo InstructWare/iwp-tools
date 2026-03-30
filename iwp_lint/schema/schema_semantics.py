@@ -25,6 +25,14 @@ class ParsedIwpControl:
     file_type_id: str | None = None
     section_key: str | None = None
     kind: str | None = None
+    arg_keys: tuple[str, ...] = ()
+    invalid_args: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class IwpControlParamIssue:
+    code: str
+    message: str
 
 
 @dataclass(frozen=True)
@@ -277,27 +285,154 @@ def parse_iwp_control_token(raw_text: str, *, enabled: bool) -> tuple[str, Parse
     if token == "@no-iwp":
         return body, ParsedIwpControl(mode="no_iwp")
     args_raw = match.group("args") or ""
-    parsed_args = _parse_iwp_args(args_raw)
+    parsed_args, invalid_args = _parse_iwp_args(args_raw)
     return body, ParsedIwpControl(
         mode="iwp",
         file_type_id=parsed_args.get("file"),
         section_key=parsed_args.get("section"),
         kind=parsed_args.get("kind"),
+        arg_keys=tuple(sorted(parsed_args.keys())),
+        invalid_args=invalid_args,
     )
 
 
-def _parse_iwp_args(raw: str) -> dict[str, str]:
+def _parse_iwp_args(raw: str) -> tuple[dict[str, str], tuple[str, ...]]:
     out: dict[str, str] = {}
+    invalid_items: list[str] = []
     for item in [part.strip() for part in raw.split(",") if part.strip()]:
         if "=" not in item:
+            invalid_items.append(item)
             continue
         key, value = item.split("=", 1)
         normalized_key = key.strip().lower()
         normalized_value = value.strip()
         if not normalized_key or not normalized_value:
+            invalid_items.append(item)
             continue
         out[normalized_key] = normalized_value
-    return out
+    return out, tuple(invalid_items)
+
+
+def validate_iwp_control_params(
+    control: ParsedIwpControl | None,
+    profile: SchemaProfile,
+    *,
+    strict_annotation_params: bool,
+) -> list[IwpControlParamIssue]:
+    if not strict_annotation_params or control is None or control.mode != "iwp":
+        return []
+    issues: list[IwpControlParamIssue] = []
+    if control.invalid_args:
+        issues.append(
+            IwpControlParamIssue(
+                code="IWP301",
+                message=f"Invalid annotation parameter syntax: {', '.join(control.invalid_args)}",
+            )
+        )
+    allowed_keys = {"kind", "file", "section"}
+    unknown_keys = [key for key in control.arg_keys if key not in allowed_keys]
+    if unknown_keys:
+        issues.append(
+            IwpControlParamIssue(
+                code="IWP301",
+                message=f"Unsupported annotation parameter key(s): {', '.join(unknown_keys)}",
+            )
+        )
+    has_file = bool(control.file_type_id)
+    has_section = bool(control.section_key)
+    if has_file != has_section:
+        issues.append(
+            IwpControlParamIssue(
+                code="IWP302",
+                message="`file` and `section` must be provided together.",
+            )
+        )
+    kind_pair: tuple[str, str] | None = None
+    if control.kind:
+        if "." not in control.kind:
+            issues.append(
+                IwpControlParamIssue(
+                    code="IWP304",
+                    message="Invalid `kind` format. Expected `<file_type_id>.<section_key>`.",
+                )
+            )
+        else:
+            file_type_id, section_key = control.kind.rsplit(".", 1)
+            normalized_file_type_id = file_type_id.strip()
+            normalized_section_key = section_key.strip()
+            if not normalized_file_type_id or not normalized_section_key:
+                issues.append(
+                    IwpControlParamIssue(
+                        code="IWP304",
+                        message="Invalid `kind` format. Expected non-empty file/section.",
+                    )
+                )
+            else:
+                kind_pair = (normalized_file_type_id, normalized_section_key)
+                if not _is_valid_file_section_pair(
+                    profile,
+                    file_type_id=normalized_file_type_id,
+                    section_key=normalized_section_key,
+                ):
+                    issues.append(
+                        IwpControlParamIssue(
+                            code="IWP301",
+                            message=f"Unknown `kind` value: {control.kind}",
+                        )
+                    )
+    file_section_pair: tuple[str, str] | None = None
+    if has_file and has_section:
+        file_section_pair = (str(control.file_type_id), str(control.section_key))
+        if not _is_valid_file_section_pair(
+            profile,
+            file_type_id=file_section_pair[0],
+            section_key=file_section_pair[1],
+        ):
+            issues.append(
+                IwpControlParamIssue(
+                    code="IWP302",
+                    message=(
+                        "Invalid `file`/`section` pair: "
+                        f"file={file_section_pair[0]}, section={file_section_pair[1]}"
+                    ),
+                )
+            )
+    if kind_pair is not None and file_section_pair is not None and kind_pair != file_section_pair:
+        issues.append(
+            IwpControlParamIssue(
+                code="IWP303",
+                message=(
+                    "Conflicting annotation parameters: "
+                    f"kind={control.kind} vs file={file_section_pair[0]},section={file_section_pair[1]}"
+                ),
+            )
+        )
+    return _dedupe_issues(issues)
+
+
+def _is_valid_file_section_pair(
+    profile: SchemaProfile,
+    *,
+    file_type_id: str,
+    section_key: str,
+) -> bool:
+    for schema in profile.file_type_schemas:
+        if schema.id != file_type_id:
+            continue
+        return section_key in {item.key for item in schema.sections}
+    return False
+
+
+def _dedupe_issues(issues: list[IwpControlParamIssue]) -> list[IwpControlParamIssue]:
+    deduped: list[IwpControlParamIssue] = []
+    seen: set[tuple[str, str]] = set()
+    for issue in issues:
+        key = (issue.code, issue.message)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(issue)
+    return deduped
 
 
 def _resolve_control_semantic_context(
@@ -311,7 +446,7 @@ def _resolve_control_semantic_context(
     if control.kind:
         if "." not in control.kind:
             return (fallback_file_type_id, control.kind)
-        file_type_id, section_key = control.kind.split(".", 1)
+        file_type_id, section_key = control.kind.rsplit(".", 1)
         if file_type_id.strip() and section_key.strip():
             return (file_type_id.strip(), section_key.strip())
     file_type_id = control.file_type_id or fallback_file_type_id

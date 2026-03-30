@@ -13,6 +13,7 @@ authors = [
   { name = "InstructWare Maintainers" },
 ]
 dependencies = [
+  "dulwich>=0.22.8",
   "PyYAML>=6.0.1",
 ]
 

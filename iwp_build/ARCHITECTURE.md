@@ -22,7 +22,7 @@ flowchart LR
   CLI["cli.py\n命令路由与参数解析"] --> BS["build_service.py\nbuild 检查点编排"]
   CLI --> VS["verify_service.py\ncompiled + lint + tests"]
   CLI --> WS["watch.py\n本地增量编译循环"]
-  CLI --> HS["history命令\ncheckpoint list/restore/prune"]
+  CLI --> HS["history命令\ncheckpoint/list/restore/prune"]
   CLI --> OF["output_formatter.py\nJSON压缩与诊断渲染"]
 
   BS --> API["iwp_lint.api\n稳定库接口"]
@@ -39,7 +39,7 @@ flowchart LR
 - `cli.py`
   - 唯一命令入口，负责参数定义、子命令分发、错误提示
   - 统一支持 `--config` 与 session diff 参数透传（`code-diff-level/context/max-chars`）
-  - 提供 history 子命令编排（`list/restore/prune`）
+  - 提供 history 子命令编排（`checkpoint/list/restore/prune`）
 - `build_service.py`
   - `run_build(...)` 主编排函数
   - 负责 build 只读构建生命周期：
@@ -63,7 +63,7 @@ flowchart LR
 - `tests/`
   - `test_build_commit.py`：build 只读语义 + commit 单写 baseline 语义
   - `test_session_cli.py`：session CLI 路径与参数透传
-  - `test_history_cli.py`：history list/restore/prune CLI 路径与阻断语义
+  - `test_history_cli.py`：history checkpoint/list/restore/prune CLI 路径与阻断语义
   - `test_watch.py`：watch 的变更检测与防抖行为
   - `test_e2e_suite.py` + `e2e/*`：端到端回归场景
 
@@ -111,7 +111,8 @@ flowchart TD
 
 - `mode=auto` 优先走 diff；无 baseline 时回退 `bootstrap_full`
 - `build` 成功/失败都不推进 baseline（无状态副作用）
-- 常规 baseline 推进入口为 `session commit`
+- 开发态快照入口为 `history checkpoint`（无 gate）
+- 常规 baseline 推进入口为 `session commit`（有 gate）
 - `history restore` 可把当前 baseline 指针切换到历史 checkpoint
 
 ## 5.2 Verify 交付流程
@@ -160,6 +161,7 @@ flowchart LR
 - `session diff` 支持 `summary/hunk` 两级代码差异输出
 - `session start` 支持 `--if-missing` 幂等引导：有活动会话时直接复用
 - `session commit` 支持可选 `--message`，用于写入 checkpoint 历史摘要
+- `history checkpoint` 支持可选 `--message`，用于记录开发态快照语义
 - `session reconcile` 支持可选 `normalize-links`，执行顺序为 `diff -> (optional normalize) -> gate`
 - `session reconcile --auto-build-sidecar` 在 sidecar stale 时执行受控刷新（`compile_context + build_code_sidecar`）后继续判定
 - `session normalize-links` 提供 session 语义入口，内部委托链接规范化写入
@@ -169,12 +171,14 @@ flowchart LR
 ```mermaid
 flowchart LR
   histCli[historySubcommand] --> histPick{action}
+  histPick -->|checkpoint| histCheckpoint[historyCheckpoint]
   histPick -->|list| histList[historyList]
   histPick -->|restore| histRestore[historyRestore]
   histPick -->|prune| histPrune[historyPrune]
-  histRestore --> histGate{dirty workspace & !force}
+  histRestore --> histGate{dirty workspace OR open session & !force}
   histGate -->|yes| histBlocked[restoreBlocked]
   histGate -->|no| histApply[applyRestoreAndSwitchBaseline]
+  histCheckpoint --> histJson
   histList --> histJson[writeJsonOptional]
   histBlocked --> histJson
   histApply --> histJson
@@ -185,6 +189,7 @@ flowchart LR
 
 - `history restore --dry-run` 只输出影响清单，不改写文件
 - `history restore` 默认脏工作区阻断，`--force` 才允许覆盖
+- `history restore` 默认活动会话阻断，`--force` 才允许覆盖
 - restore 可自动创建 `restore_before_apply` 安全点
 - restore 成功返回下一步建议（`verify` / `session reconcile`）
 
@@ -217,7 +222,7 @@ flowchart TD
 ## 6. 设计约束与稳定性约定
 
 - 单一真相来源：规则与 diff 语义全部来自 `iwp_lint`，`iwp_build` 只做编排
-- baseline 约束：`build` 只读；常规推进由 `session commit`；历史切换由 `history restore`
+- baseline 约束：`build` 只读；开发态推进可由 `history checkpoint`；常规推进由 `session commit`；历史切换由 `history restore`
 - 人机双消费：
   - 控制台输出用于本地诊断
   - JSON 输出用于 agent/runtime 自动消费
@@ -250,5 +255,5 @@ uv run python -m unittest iwp_build.tests.test_e2e_suite
 若改动了 history/restore 语义，额外检查：
 
 - `history restore --dry-run` 与 apply 结果字段是否一致
-- 脏工作区阻断与 `--force` 放行语义是否符合预期
+- 脏工作区阻断 / open-session 阻断与 `--force` 放行语义是否符合预期
 - `history prune` 是否保留最新 checkpoint 与最近 `restore_before_apply`

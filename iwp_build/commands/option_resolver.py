@@ -58,6 +58,7 @@ class SessionOptions:
 class HistoryOptions:
     action: str
     json_path: str | None
+    message: str | None
     limit: int | None
     to_checkpoint_id: int | None
     dry_run: bool
@@ -308,6 +309,11 @@ def resolve_history_options(args: argparse.Namespace, *, config: Any) -> History
         json_path=pick_value(
             getattr(args, "json", None),
             preset_opts.get("json"),
+            fallback=None,
+        ),
+        message=pick_value(
+            getattr(args, "message", None),
+            preset_opts.get("message"),
             fallback=None,
         ),
         limit=pick_value(

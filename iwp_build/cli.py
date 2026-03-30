@@ -27,6 +27,7 @@ from .services.watch import run_watch
 try:
     from iwp_lint.api import (
         compile_context,
+        history_checkpoint,
         history_list,
         history_prune,
         history_restore,
@@ -42,6 +43,7 @@ try:
 except ImportError:
     from ..iwp_lint.api import (
         compile_context,
+        history_checkpoint,
         history_list,
         history_prune,
         history_restore,
@@ -254,6 +256,12 @@ def _run_history(config: Any, options: HistoryOptions) -> int:
             f"removed={safe_len(payload.get('removed_checkpoint_ids'))} "
             f"kept={safe_len(payload.get('kept_checkpoint_ids'))}"
         )
+    if action == "checkpoint":
+        print(
+            "[iwp-build] history checkpoint "
+            f"id={payload.get('checkpoint_id', 'n/a')} "
+            f"snapshot_id={payload.get('snapshot_id', 'n/a')}"
+        )
     if written:
         print(f"[iwp-build] history json path={written}")
     if action == "restore" and str(payload.get("status")) == "blocked":
@@ -278,6 +286,7 @@ def _build_history_handlers() -> dict[str, HistoryHandler]:
         "list": _handle_history_list,
         "restore": _handle_history_restore,
         "prune": _handle_history_prune,
+        "checkpoint": _handle_history_checkpoint,
     }
 
 
@@ -454,6 +463,16 @@ def _handle_history_prune(ctx: HistoryActionContext) -> HistoryActionResult:
         max_snapshots=options.max_snapshots,
         max_days=options.max_days,
         max_bytes=options.max_bytes,
+    )
+    return HistoryActionResult(payload=payload)
+
+
+def _handle_history_checkpoint(ctx: HistoryActionContext) -> HistoryActionResult:
+    options = ctx.options
+    payload = history_checkpoint(
+        config=ctx.config,
+        actor="iwp-build",
+        message=options.message,
     )
     return HistoryActionResult(payload=payload)
 

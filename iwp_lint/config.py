@@ -94,8 +94,15 @@ class HistorySafetyConfig:
 @dataclass
 class HistoryConfig:
     enabled: bool = True
+    backend: str = "dulwich"
+    git_dir: str = ".iwp/cache/history.git"
     retention: HistoryRetentionConfig = field(default_factory=HistoryRetentionConfig)
     safety: HistorySafetyConfig = field(default_factory=HistorySafetyConfig)
+
+
+@dataclass
+class WorkflowConfig:
+    mode: str = "aligned"
 
 
 @dataclass
@@ -114,6 +121,7 @@ class AuthoringConfig:
     tokens: AuthoringTokensConfig = field(default_factory=AuthoringTokensConfig)
     node_generation_mode: str = "structural"
     kind_unknown_policy: str = "warn"
+    strict_annotation_params: bool = True
     strict_scopes: list[str] = field(default_factory=list)
 
 
@@ -208,6 +216,7 @@ class LintConfig:
     code_sidecar: CodeSidecarConfig = field(default_factory=CodeSidecarConfig)
     session: SessionConfig = field(default_factory=SessionConfig)
     history: HistoryConfig = field(default_factory=HistoryConfig)
+    workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     execution_presets: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
@@ -244,6 +253,7 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
     profiles_raw = raw.get("coverage_profiles", [])
     session_raw = raw.get("session", {})
     history_raw = raw.get("history", {})
+    workflow_raw = raw.get("workflow", {})
     history_retention_raw = history_raw.get("retention", {})
     history_safety_raw = history_raw.get("safety", {})
     config_dir = config_path.parent
@@ -312,6 +322,7 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
             kind_unknown_policy=_load_kind_unknown_policy(
                 authoring_raw.get("kind_unknown_policy", "warn")
             ),
+            strict_annotation_params=bool(authoring_raw.get("strict_annotation_params", True)),
             strict_scopes=[str(item) for item in authoring_raw.get("strict_scopes", [])],
         ),
         node_registry_file=str(raw.get("node_registry_file", DEFAULT_NODE_REGISTRY_FILE)),
@@ -360,6 +371,8 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
         ),
         history=HistoryConfig(
             enabled=bool(history_raw.get("enabled", True)),
+            backend=_load_history_backend(history_raw.get("backend", "dulwich")),
+            git_dir=str(history_raw.get("git_dir", ".iwp/cache/history.git")),
             retention=HistoryRetentionConfig(
                 max_snapshots=max(1, int(history_retention_raw.get("max_snapshots", 200))),
                 max_days=max(1, int(history_retention_raw.get("max_days", 30))),
@@ -370,6 +383,13 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
                 auto_checkpoint_before_restore=bool(
                     history_safety_raw.get("auto_checkpoint_before_restore", True)
                 ),
+            ),
+        ),
+        workflow=WorkflowConfig(
+            mode=_load_workflow_mode(
+                workflow_raw.get("mode", "aligned")
+                if isinstance(workflow_raw, dict)
+                else "aligned"
             ),
         ),
         execution_presets=_load_execution_presets(raw.get("execution_presets", {})),
@@ -482,6 +502,20 @@ def _load_node_generation_mode(raw: Any) -> str:
     if value in {"structural", "annotated_only"}:
         return value
     return "structural"
+
+
+def _load_workflow_mode(raw: Any) -> str:
+    value = str(raw).strip().lower()
+    if value in {"fast", "aligned"}:
+        return value
+    return "aligned"
+
+
+def _load_history_backend(raw: Any) -> str:
+    value = str(raw).strip().lower()
+    if value in {"snapshot", "dulwich"}:
+        return value
+    return "dulwich"
 
 
 def is_builtin_schema_source(schema_file: str) -> bool:

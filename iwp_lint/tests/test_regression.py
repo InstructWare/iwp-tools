@@ -357,6 +357,50 @@ class IwpLintRegressionTests(unittest.TestCase):
             config = load_config(str(cfg_dir / ".iwp-lint.json"))
             self.assertTrue(config.page_only.enabled)
 
+    def test_config_strict_annotation_params_defaults_to_true(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            cfg_dir = root / "ci"
+            _write(cfg_dir / ".iwp-lint.json", json.dumps({}))
+            config = load_config(str(cfg_dir / ".iwp-lint.json"))
+            self.assertTrue(config.authoring.strict_annotation_params)
+
+    def test_config_strict_annotation_params_can_be_disabled(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            cfg_dir = root / "ci"
+            _write(
+                cfg_dir / ".iwp-lint.json",
+                json.dumps({"authoring": {"strict_annotation_params": False}}),
+            )
+            config = load_config(str(cfg_dir / ".iwp-lint.json"))
+            self.assertFalse(config.authoring.strict_annotation_params)
+
+    def test_config_workflow_mode_defaults_to_aligned(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            cfg_dir = root / "ci"
+            _write(cfg_dir / ".iwp-lint.json", json.dumps({}))
+            config = load_config(str(cfg_dir / ".iwp-lint.json"))
+            self.assertEqual(config.workflow.mode, "aligned")
+
+    def test_config_workflow_mode_accepts_fast_and_fallbacks_on_invalid(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            cfg_dir = root / "ci"
+            _write(
+                cfg_dir / ".iwp-lint.fast.json",
+                json.dumps({"workflow": {"mode": "fast"}}),
+            )
+            fast_config = load_config(str(cfg_dir / ".iwp-lint.fast.json"))
+            self.assertEqual(fast_config.workflow.mode, "fast")
+            _write(
+                cfg_dir / ".iwp-lint.invalid.json",
+                json.dumps({"workflow": {"mode": "unknown"}}),
+            )
+            invalid_config = load_config(str(cfg_dir / ".iwp-lint.invalid.json"))
+            self.assertEqual(invalid_config.workflow.mode, "aligned")
+
     def test_schema_authoring_aliases_are_loaded_from_schema_file(self) -> None:
         with _workspace_tmpdir() as td:
             root = Path(td)
@@ -466,6 +510,141 @@ class IwpLintRegressionTests(unittest.TestCase):
                 page_only_enabled=True,
             ).diagnostics
             self.assertFalse(any(diag.code == "IWP202" for diag in enabled_diags))
+
+    def test_annotation_param_unknown_kind_is_error(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(
+                iwp_root / "views/pages/home.md",
+                "# Home\n\n## Layout Tree\n- CTA @iwp(kind=views.pages.unknown_section)\n",
+            )
+            diagnostics = validate_markdown_schema(
+                iwp_root=iwp_root,
+                schema_path=schema_path,
+                mode="compat",
+                strict_annotation_params=True,
+            ).diagnostics
+            self.assertTrue(
+                any(
+                    d.code == "IWP301"
+                    and "Unknown `kind` value" in d.message
+                    and d.severity == "error"
+                    for d in diagnostics
+                )
+            )
+
+    def test_annotation_param_requires_file_and_section_together(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(
+                iwp_root / "views/pages/home.md",
+                "# Home\n\n## Layout Tree\n- CTA @iwp(file=views.pages)\n",
+            )
+            diagnostics = validate_markdown_schema(
+                iwp_root=iwp_root,
+                schema_path=schema_path,
+                mode="compat",
+                strict_annotation_params=True,
+            ).diagnostics
+            self.assertTrue(any(d.code == "IWP302" and d.severity == "error" for d in diagnostics))
+
+    def test_annotation_param_detects_kind_file_section_conflict(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(
+                iwp_root / "views/pages/home.md",
+                (
+                    "# Home\n\n## Layout Tree\n"
+                    "- CTA @iwp(kind=views.pages.layout_tree,file=views.pages,section=interaction_hooks)\n"
+                ),
+            )
+            diagnostics = validate_markdown_schema(
+                iwp_root=iwp_root,
+                schema_path=schema_path,
+                mode="compat",
+                strict_annotation_params=True,
+            ).diagnostics
+            self.assertTrue(any(d.code == "IWP303" and d.severity == "error" for d in diagnostics))
+
+    def test_annotation_param_type_key_is_rejected(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(
+                iwp_root / "views/pages/home.md",
+                "# Home\n\n## Layout Tree\n- CTA @iwp(type=policy.rule)\n",
+            )
+            diagnostics = validate_markdown_schema(
+                iwp_root=iwp_root,
+                schema_path=schema_path,
+                mode="compat",
+                strict_annotation_params=True,
+            ).diagnostics
+            self.assertTrue(
+                any(
+                    d.code == "IWP301"
+                    and "Unsupported annotation parameter key" in d.message
+                    and d.severity == "error"
+                    for d in diagnostics
+                )
+            )
+
+    def test_annotation_param_valid_forms_pass(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(
+                iwp_root / "views/pages/home.md",
+                "\n".join(
+                    [
+                        "# Home",
+                        "",
+                        "## Layout Tree",
+                        "- CTA @iwp",
+                        "- CTA2 @iwp(kind=views.pages.layout_tree)",
+                        "- CTA3 @iwp(file=views.pages,section=interaction_hooks)",
+                    ]
+                )
+                + "\n",
+            )
+            diagnostics = validate_markdown_schema(
+                iwp_root=iwp_root,
+                schema_path=schema_path,
+                mode="compat",
+                strict_annotation_params=True,
+            ).diagnostics
+            self.assertFalse(any(d.code.startswith("IWP30") for d in diagnostics))
+
+    def test_annotation_param_strict_check_can_be_disabled(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(
+                iwp_root / "views/pages/home.md",
+                "# Home\n\n## Layout Tree\n- CTA @iwp\n",
+            )
+            diagnostics = validate_markdown_schema(
+                iwp_root=iwp_root,
+                schema_path=schema_path,
+                mode="compat",
+                strict_annotation_params=False,
+            ).diagnostics
+            self.assertFalse(any(d.code.startswith("IWP30") for d in diagnostics))
 
     def test_versioning_constants_drive_default_config(self) -> None:
         config = LintConfig(project_root=Path.cwd())

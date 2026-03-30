@@ -144,6 +144,7 @@ from iwp_lint.config import load_config
 from iwp_lint.api import (
     build_code_sidecar,
     compile_context,
+    history_checkpoint,
     history_list,
     history_prune,
     history_restore,
@@ -165,6 +166,7 @@ session = session_start(config)
 intent = session_diff(config, session_id=session["session_id"])
 gate = session_gate(config, session_id=session["session_id"])
 session_commit(config, session_id=session["session_id"], message="agent: align links and tests")
+checkpoint = history_checkpoint(config, message="fast loop savepoint")
 history = history_list(config, limit=20)
 preview = history_restore(config, to_checkpoint_id=42, dry_run=True)
 history_prune(config)
@@ -178,7 +180,7 @@ Primary API module:
 ## Diff Source
 
 `diff` compares current workspace against the latest filesystem snapshot baseline.
-Build 保持只读，不推进 baseline。常规 baseline 推进由 `session_commit` 完成；历史切换由 `history_restore` 完成。
+Build 保持只读，不推进 baseline。开发态快照推进可由 `history_checkpoint` 完成；常规 baseline 推进由 `session_commit` 完成；历史切换由 `history_restore` 完成。
 
 Snapshot internals are exposed through library API for orchestrators.
 
@@ -199,9 +201,12 @@ Session workflow (non-git, baseline-aware):
   - density warnings for suspiciously high link concentration
 - `session_commit` runs gate suite and atomically advances baseline only on pass
   - optional `message` is persisted to checkpoint metadata for history timeline display
+- `history_checkpoint` creates a file-level checkpoint and advances baseline without gate checks
+  - optional `message` is persisted for fast-loop timeline readability
 - `history_list` returns checkpoint timeline and optional storage stats
 - `history_restore` supports dry-run preview and force restore under dirty workspace
   - default safety: block on dirty workspace
+  - default safety: block when an open session exists
   - optional safety checkpoint: `restore_before_apply`
 - `history_prune` applies retention policy and keeps protected checkpoints
 

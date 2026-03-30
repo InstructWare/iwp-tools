@@ -7,6 +7,7 @@ from iwp_build.tests.e2e.test_bootstrap_no_baseline_no_links import (
     BootstrapNoBaselineNoLinksBuildE2E,
 )
 from iwp_build.tests.e2e.test_bootstrap_official_schema import BootstrapOfficialSchemaBuildE2E
+from iwp_build.tests.e2e.test_fast_mode_no_iwp import FastModeNoIwpBuildE2E
 from iwp_build.tests.e2e.test_feature_add_node import FeatureAddNodeBuildE2E
 from iwp_build.tests.e2e.test_feature_delete_node import FeatureDeleteNodeBuildE2E
 from iwp_build.tests.e2e.test_feature_modify_node import FeatureModifyNodeBuildE2E
@@ -23,6 +24,7 @@ __all__ = [
     "PageOnlyNamespacedBuildE2E",
     "BootstrapNoBaselineNoLinksBuildE2E",
     "BootstrapOfficialSchemaBuildE2E",
+    "FastModeNoIwpBuildE2E",
 ]
 
 

@@ -80,6 +80,24 @@ class IwpBuildHistoryCliTests(unittest.TestCase):
                 link_file,
                 "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
             )
+            checkpoint_exit = main(
+                [
+                    "history",
+                    "checkpoint",
+                    "--config",
+                    str(config_path),
+                    "--message",
+                    "fast loop savepoint",
+                    "--json",
+                    str(out_dir / "history.checkpoint.json"),
+                ]
+            )
+            self.assertEqual(checkpoint_exit, 0)
+            checkpoint_payload = json.loads(
+                (out_dir / "history.checkpoint.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(checkpoint_payload["status"], "ok")
+            self.assertIsInstance(checkpoint_payload["checkpoint_id"], int)
             self.assertEqual(main(["session", "start", "--config", str(config_path)]), 0)
             self.assertEqual(
                 main(
@@ -135,9 +153,27 @@ class IwpBuildHistoryCliTests(unittest.TestCase):
             self.assertEqual(list_exit, 0)
             listed = json.loads((out_dir / "history.list.json").read_text(encoding="utf-8"))
             self.assertGreaterEqual(len(listed["checkpoints"]), 2)
+            self.assertTrue(
+                any(
+                    str(item.get("source", "")) == "history_checkpoint"
+                    for item in listed["checkpoints"]
+                )
+            )
+            history_checkpoint_rows = [
+                item
+                for item in listed["checkpoints"]
+                if str(item.get("source", "")) == "history_checkpoint"
+            ]
+            self.assertTrue(history_checkpoint_rows)
+            self.assertIsInstance(history_checkpoint_rows[0].get("git_commit_oid"), str)
+            self.assertTrue(str(history_checkpoint_rows[0]["git_commit_oid"]))
             self.assertEqual(str(listed["checkpoints"][0]["message"]), "add beta node")
-            self.assertEqual(str(listed["checkpoints"][-1]["message"]), "init baseline alpha")
-            target_checkpoint_id = int(listed["checkpoints"][-1]["checkpoint_id"])
+            message_index = {
+                str(item.get("message", "")): int(item["checkpoint_id"])
+                for item in listed["checkpoints"]
+            }
+            self.assertIn("init baseline alpha", message_index)
+            target_checkpoint_id = message_index["init baseline alpha"]
 
             dry_run_exit = main(
                 [

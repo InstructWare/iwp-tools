@@ -95,6 +95,7 @@ def run_schema(config: LintConfig, mode_override: str | None = None) -> dict[str
         target_rel_paths=None,
         exclude_markdown_globs=config.schema_exclude_markdown_globs,
         page_only_enabled=config.page_only.enabled,
+        strict_annotation_params=config.authoring.strict_annotation_params,
     )
     diagnostics = sorted(
         schema_result.diagnostics,
@@ -149,6 +150,7 @@ def _run_core(
         target_rel_paths=changed_md_files if mode == "diff" else None,
         exclude_markdown_globs=config.schema_exclude_markdown_globs,
         page_only_enabled=config.page_only.enabled,
+        strict_annotation_params=config.authoring.strict_annotation_params,
     )
     diagnostics.extend(schema_result.diagnostics)
     code_files = discover_code_files(

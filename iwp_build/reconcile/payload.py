@@ -11,6 +11,8 @@ def assemble_reconcile_payload(
     diagnostics_bundle: dict[str, object],
     guidance: dict[str, object],
 ) -> dict[str, object]:
+    workflow_mode = _resolve_workflow_mode(request)
+    mode_warnings = _build_mode_warnings(request)
     gate_payload = _as_dict(artifacts.get("gate_payload"))
     diff_payload = _as_dict(artifacts.get("diff_payload"))
     sidecar_freshness = _as_dict(artifacts.get("sidecar_freshness"))
@@ -34,6 +36,7 @@ def assemble_reconcile_payload(
             "protocol_block": "IWP_RECONCILE_V1",
             "mode": "decision",
             "schema_version": "iwp.session.reconcile.v1",
+            "workflow_mode": workflow_mode,
         },
         "session_id": artifacts.get("resolved_session_id"),
         "status": "pass" if can_commit else "blocked",
@@ -81,6 +84,7 @@ def assemble_reconcile_payload(
         "normalize": artifacts.get("normalize_payload"),
         "auto_recovered": bool(artifacts.get("sidecar_auto_recovered", False)),
         "sidecar_refresh": artifacts.get("sidecar_refresh_payload"),
+        "mode_warnings": mode_warnings,
     }
 
 
@@ -119,3 +123,28 @@ def sanitize_reconcile_payload(payload: dict[str, object]) -> dict[str, object]:
 
 def _as_dict(value: object) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
+
+
+def _resolve_workflow_mode(request: object) -> str:
+    config = getattr(request, "config", None)
+    workflow = getattr(config, "workflow", None)
+    mode = str(getattr(workflow, "mode", "aligned")).strip().lower()
+    if mode in {"fast", "aligned"}:
+        return mode
+    return "aligned"
+
+
+def _build_mode_warnings(request: object) -> list[str]:
+    workflow_mode = _resolve_workflow_mode(request)
+    if workflow_mode != "fast":
+        return []
+    config = getattr(request, "config", None)
+    authoring = getattr(config, "authoring", None)
+    node_generation_mode = str(
+        getattr(authoring, "node_generation_mode", "structural")
+    ).strip().lower()
+    if node_generation_mode == "structural":
+        return [
+            "workflow.mode=fast with node_generation_mode=structural may generate high trace pressure; prefer checkpoint loop before aligned gate."
+        ]
+    return []

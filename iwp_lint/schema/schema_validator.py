@@ -17,6 +17,7 @@ from .schema_semantics import (
     parse_iwp_control_token,
     resolve_page_only_h2,
     resolve_section_keys,
+    validate_iwp_control_params,
 )
 
 LIST_ITEM_RE = re.compile(r"^\s*-\s+(.*)$")
@@ -35,6 +36,7 @@ class SchemaValidationContext:
     profile: SchemaProfile
     mode: str
     semantic_context: SemanticContext
+    strict_annotation_params: bool
 
 
 def validate_markdown_schema(
@@ -44,6 +46,7 @@ def validate_markdown_schema(
     target_rel_paths: set[str] | None = None,
     exclude_markdown_globs: list[str] | None = None,
     page_only_enabled: bool = False,
+    strict_annotation_params: bool = True,
 ) -> SchemaValidationResult:
     profile = load_schema_profile(schema_path)
     mode = _resolve_mode(mode, profile)
@@ -51,6 +54,7 @@ def validate_markdown_schema(
         profile=profile,
         mode=mode,
         semantic_context=build_semantic_context(profile, page_only_enabled=page_only_enabled),
+        strict_annotation_params=strict_annotation_params,
     )
 
     diagnostics: list[Diagnostic] = []
@@ -337,6 +341,21 @@ def _validate_authoring_token_usage(
                     message="Control token must be a single valid trailing token.",
                     file_path=rel_path,
                     line=line_no,
+                )
+            )
+            continue
+        for issue in validate_iwp_control_params(
+            control,
+            context.profile,
+            strict_annotation_params=context.strict_annotation_params,
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    code=issue.code,
+                    message=issue.message,
+                    file_path=rel_path,
+                    line=line_no,
+                    severity="error",
                 )
             )
     return diagnostics

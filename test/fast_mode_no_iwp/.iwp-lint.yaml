@@ -1,0 +1,30 @@
+iwp_root: InstructWare.iw
+code_roots:
+  - _ir/src
+include_ext:
+  - .ts
+test_globs:
+  - "**/tests/**"
+  - "**/*.test.*"
+node_registry_file: .iwp/node_registry.v1.json
+node_catalog_file: .iwp/node_catalog.v1.json
+cache:
+  dir: .iwp/cache
+  node_index_db_file: .iwp/cache/node_index.v1.sqlite
+  snapshot_db_file: .iwp/cache/snapshots.sqlite
+task:
+  dir: .iwp/tasks
+compiled:
+  dir: .iwp/compiled
+critical_node_patterns: []
+thresholds:
+  node_linked_min: 0
+  critical_linked_min: 0
+  node_tested_min: 0
+schema:
+  file: ../schema/test-schema.min.json
+  mode: compat
+  exclude_markdown_globs: []
+authoring:
+  node_generation_mode: annotated_only
+  strict_annotation_params: true

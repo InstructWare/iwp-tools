@@ -263,6 +263,19 @@ def history_restore(
     )
 
 
+def history_checkpoint(
+    config: LintConfig,
+    *,
+    actor: str | None = None,
+    message: str | None = None,
+) -> dict[str, Any]:
+    service = HistoryService(config)
+    return service.checkpoint(
+        actor=actor,
+        message=message,
+    )
+
+
 def history_prune(
     config: LintConfig,
     *,

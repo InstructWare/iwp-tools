@@ -68,3 +68,22 @@ def add_history_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     )
     history_prune_cmd.add_argument("--json", help="Write payload JSON to path", default=None)
     history_prune_cmd.set_defaults(command="history", history_action="prune")
+
+    history_checkpoint_cmd = history_sub.add_parser(
+        "checkpoint", help="Create a file-level checkpoint from current workspace"
+    )
+    history_checkpoint_cmd.add_argument(
+        "--config", help="Path to .iwp-lint.yaml or .json", default=None
+    )
+    history_checkpoint_cmd.add_argument(
+        "--preset",
+        default=None,
+        help="Execution preset name from .iwp-lint.yaml execution_presets",
+    )
+    history_checkpoint_cmd.add_argument(
+        "--message",
+        default=None,
+        help="Checkpoint message for history timeline",
+    )
+    history_checkpoint_cmd.add_argument("--json", help="Write payload JSON to path", default=None)
+    history_checkpoint_cmd.set_defaults(command="history", history_action="checkpoint")

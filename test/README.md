@@ -30,6 +30,7 @@ Scenario names map to workflow events and edge cases:
 - `bootstrap_first_build`
 - `bootstrap_no_baseline_no_links`
 - `compiled_stale_or_missing`
+- `fast_mode_no_iwp`
 - `i18n_zh_en`
 - `page_only_namespaced`
 

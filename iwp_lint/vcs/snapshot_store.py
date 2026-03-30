@@ -105,6 +105,7 @@ class SnapshotStore:
                         session_id TEXT,
                         baseline_snapshot_id INTEGER,
                         gate_status TEXT NOT NULL,
+                        git_commit_oid TEXT,
                         message TEXT,
                         metadata_json TEXT,
                         FOREIGN KEY (snapshot_id) REFERENCES snapshots(id),
@@ -118,6 +119,13 @@ class SnapshotStore:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_checkpoints_created_at ON checkpoints(created_at)"
                 )
+                columns = {
+                    str(row[1])
+                    for row in conn.execute("PRAGMA table_info(checkpoints)").fetchall()
+                    if len(row) > 1
+                }
+                if "git_commit_oid" not in columns:
+                    conn.execute("ALTER TABLE checkpoints ADD COLUMN git_commit_oid TEXT")
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS history_events (
@@ -213,7 +221,7 @@ class SnapshotStore:
             row = conn.execute(
                 """
                 SELECT id, snapshot_id, created_at, source, session_id,
-                       baseline_snapshot_id, gate_status, message, metadata_json
+                       baseline_snapshot_id, gate_status, git_commit_oid, message, metadata_json
                 FROM checkpoints
                 ORDER BY id DESC
                 LIMIT 1
@@ -229,8 +237,9 @@ class SnapshotStore:
             "session_id": str(row[4]) if row[4] is not None else None,
             "baseline_snapshot_id": int(row[5]) if row[5] is not None else None,
             "gate_status": str(row[6]),
-            "message": str(row[7] or ""),
-            "metadata": json.loads(row[8]) if row[8] else {},
+            "git_commit_oid": str(row[7]) if row[7] is not None else None,
+            "message": str(row[8] or ""),
+            "metadata": json.loads(row[9]) if row[9] else {},
         }
 
     def create_checkpoint(
@@ -241,6 +250,7 @@ class SnapshotStore:
         session_id: str | None = None,
         baseline_snapshot_id: int | None = None,
         gate_status: str = "unknown",
+        git_commit_oid: str | None = None,
         message: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> int:
@@ -253,8 +263,8 @@ class SnapshotStore:
                     """
                     INSERT INTO checkpoints(
                         snapshot_id, created_at, source, session_id,
-                        baseline_snapshot_id, gate_status, message, metadata_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        baseline_snapshot_id, gate_status, git_commit_oid, message, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         snapshot_id,
@@ -263,6 +273,7 @@ class SnapshotStore:
                         session_id,
                         baseline_snapshot_id,
                         gate_status,
+                        git_commit_oid,
                         message or "",
                         metadata_json,
                     ),
@@ -277,7 +288,7 @@ class SnapshotStore:
             row = conn.execute(
                 """
                 SELECT id, snapshot_id, created_at, source, session_id,
-                       baseline_snapshot_id, gate_status, message, metadata_json
+                       baseline_snapshot_id, gate_status, git_commit_oid, message, metadata_json
                 FROM checkpoints
                 WHERE id = ?
                 """,
@@ -293,15 +304,16 @@ class SnapshotStore:
             "session_id": str(row[4]) if row[4] is not None else None,
             "baseline_snapshot_id": int(row[5]) if row[5] is not None else None,
             "gate_status": str(row[6]),
-            "message": str(row[7] or ""),
-            "metadata": json.loads(row[8]) if row[8] else {},
+            "git_commit_oid": str(row[7]) if row[7] is not None else None,
+            "message": str(row[8] or ""),
+            "metadata": json.loads(row[9]) if row[9] else {},
         }
 
     def list_checkpoints(self, *, limit: int | None = None) -> list[dict[str, object]]:
         self.ensure()
         query = """
             SELECT id, snapshot_id, created_at, source, session_id,
-                   baseline_snapshot_id, gate_status, message, metadata_json
+                   baseline_snapshot_id, gate_status, git_commit_oid, message, metadata_json
             FROM checkpoints
             ORDER BY id DESC
         """
@@ -322,8 +334,9 @@ class SnapshotStore:
                     "session_id": str(row[4]) if row[4] is not None else None,
                     "baseline_snapshot_id": int(row[5]) if row[5] is not None else None,
                     "gate_status": str(row[6]),
-                    "message": str(row[7] or ""),
-                    "metadata": json.loads(row[8]) if row[8] else {},
+                    "git_commit_oid": str(row[7]) if row[7] is not None else None,
+                    "message": str(row[8] or ""),
+                    "metadata": json.loads(row[9]) if row[9] else {},
                 }
             )
         return items

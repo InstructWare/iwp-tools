@@ -134,6 +134,11 @@ def render_iwp_reconcile_text(
             lines.append(
                 f"- code={quoted(string_or_empty(item.get('code', '')))} file={quoted(string_or_empty(item.get('file_path', '')))} line={safe_int(item.get('line', 0))} message={quoted(string_or_empty(item.get('message', '')))}"
             )
+    mode_warnings = payload.get("mode_warnings", [])
+    if isinstance(mode_warnings, list) and mode_warnings:
+        lines.append("mode_warnings:")
+        for warning in mode_warnings[:max_hint_items]:
+            lines.append(f"- {quoted(warning)}")
     next_actions = payload.get("next_actions", [])
     if isinstance(next_actions, list) and next_actions:
         lines.append("next_actions:")

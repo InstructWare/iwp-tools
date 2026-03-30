@@ -340,6 +340,337 @@ class HistoryRestoreFlowBuildE2E(unittest.TestCase):
                 self.assertIn(protected_restore_before, kept)
                 self.assertIn(latest_checkpoint_before, kept)
 
+    def test_history_checkpoint_restore_blocks_when_open_session_exists(self) -> None:
+        for profile in SCHEMA_PROFILES:
+            with self.subTest(schema_profile=profile):
+                tempdir, workspace = copy_scenario_to_workspace("feature_modify_node")
+                self.addCleanup(tempdir.cleanup)
+                config_path = workspace / ".iwp-lint.yaml"
+                out_dir = workspace / "out"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                apply_schema_profile(config_path, profile)
+
+                write_architecture_markdown(workspace, profile, ["Alpha"])
+                write_links_for_source(workspace, "architecture.md")
+                self._assert_ok(
+                    run_build(
+                        [
+                            "history",
+                            "checkpoint",
+                            "--config",
+                            str(config_path),
+                            "--message",
+                            "fast checkpoint",
+                            "--json",
+                            str(out_dir / "history.checkpoint.json"),
+                        ]
+                    ),
+                    f"history checkpoint ({profile})",
+                )
+                checkpoint_payload = read_json(out_dir / "history.checkpoint.json")
+                checkpoint_id = int(checkpoint_payload["checkpoint_id"])
+
+                write_architecture_markdown(workspace, profile, ["Dirty"])
+                self._assert_ok(
+                    run_build(["session", "start", "--config", str(config_path)]),
+                    f"session start ({profile})",
+                )
+                blocked = run_build(
+                    [
+                        "history",
+                        "restore",
+                        "--config",
+                        str(config_path),
+                        "--to",
+                        str(checkpoint_id),
+                        "--json",
+                        str(out_dir / "history.restore.blocked.open-session.json"),
+                    ]
+                )
+                self._assert_fail(blocked, f"history restore blocked by open session ({profile})")
+                blocked_payload = read_json(out_dir / "history.restore.blocked.open-session.json")
+                self.assertEqual(blocked_payload["status"], "blocked")
+                self.assertEqual(blocked_payload["blocked_reason"], "open_session")
+
+                self._assert_ok(
+                    run_build(
+                        [
+                            "history",
+                            "restore",
+                            "--config",
+                            str(config_path),
+                            "--to",
+                            str(checkpoint_id),
+                            "--force",
+                            "--json",
+                            str(out_dir / "history.restore.force.open-session.json"),
+                        ]
+                    ),
+                    f"history restore force with open session ({profile})",
+                )
+                restored_text = (workspace / "InstructWare.iw/architecture.md").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("Alpha", restored_text)
+                self.assertNotIn("Dirty", restored_text)
+
+    def test_history_checkpoint_restore_recovers_file_add_delete_and_empty_content(self) -> None:
+        for profile in SCHEMA_PROFILES:
+            with self.subTest(schema_profile=profile):
+                tempdir, workspace = copy_scenario_to_workspace("feature_modify_node")
+                self.addCleanup(tempdir.cleanup)
+                config_path = workspace / ".iwp-lint.yaml"
+                out_dir = workspace / "out"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                apply_schema_profile(config_path, profile)
+
+                write_architecture_markdown(workspace, profile, ["Alpha"])
+                write_links_for_source(workspace, "architecture.md")
+                preserved_code = workspace / "_ir/src/preserved.ts"
+                preserved_code.write_text("export const preserved = 'alpha';\n", encoding="utf-8")
+                empty_code = workspace / "_ir/src/empty.ts"
+                empty_code.write_text("", encoding="utf-8")
+
+                self._assert_ok(
+                    run_build(
+                        [
+                            "history",
+                            "checkpoint",
+                            "--config",
+                            str(config_path),
+                            "--message",
+                            "edge checkpoint",
+                            "--json",
+                            str(out_dir / "history.checkpoint.edge.json"),
+                        ]
+                    ),
+                    f"history checkpoint edge ({profile})",
+                )
+                checkpoint_payload = read_json(out_dir / "history.checkpoint.edge.json")
+                checkpoint_id = int(checkpoint_payload["checkpoint_id"])
+
+                write_architecture_markdown(workspace, profile, ["Dirty"])
+                preserved_code.unlink()
+                empty_code.write_text("export const changed = true;\n", encoding="utf-8")
+                added_code = workspace / "_ir/src/added_after_checkpoint.ts"
+                added_code.write_text("export const added = 'after';\n", encoding="utf-8")
+
+                self._assert_ok(
+                    run_build(
+                        [
+                            "history",
+                            "restore",
+                            "--config",
+                            str(config_path),
+                            "--to",
+                            str(checkpoint_id),
+                            "--force",
+                            "--json",
+                            str(out_dir / "history.restore.edge.json"),
+                        ]
+                    ),
+                    f"history restore edge ({profile})",
+                )
+                restored_payload = read_json(out_dir / "history.restore.edge.json")
+                self.assertEqual(restored_payload["status"], "applied")
+                markdown_after_restore = (workspace / "InstructWare.iw/architecture.md").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("Alpha", markdown_after_restore)
+                self.assertNotIn("Dirty", markdown_after_restore)
+                self.assertTrue(preserved_code.exists())
+                self.assertEqual(
+                    preserved_code.read_text(encoding="utf-8"),
+                    "export const preserved = 'alpha';\n",
+                )
+                self.assertFalse(added_code.exists())
+                self.assertEqual(empty_code.read_text(encoding="utf-8"), "")
+
+    def test_history_restore_recovers_code_file_rename(self) -> None:
+        for profile in SCHEMA_PROFILES:
+            with self.subTest(schema_profile=profile):
+                tempdir, workspace = copy_scenario_to_workspace("feature_modify_node")
+                self.addCleanup(tempdir.cleanup)
+                config_path = workspace / ".iwp-lint.yaml"
+                out_dir = workspace / "out"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                apply_schema_profile(config_path, profile)
+
+                write_architecture_markdown(workspace, profile, ["Alpha"])
+                write_links_for_source(workspace, "architecture.md")
+                original_code = workspace / "_ir/src/rename_target.ts"
+                original_code.write_text("export const name = 'before';\n", encoding="utf-8")
+                self._assert_ok(
+                    run_build(
+                        [
+                            "history",
+                            "checkpoint",
+                            "--config",
+                            str(config_path),
+                            "--message",
+                            "rename baseline",
+                            "--json",
+                            str(out_dir / "history.checkpoint.rename.json"),
+                        ]
+                    ),
+                    f"history checkpoint rename ({profile})",
+                )
+                checkpoint_id = int(read_json(out_dir / "history.checkpoint.rename.json")["checkpoint_id"])
+
+                renamed_code = workspace / "_ir/src/renamed_target.ts"
+                original_code.rename(renamed_code)
+                renamed_code.write_text("export const name = 'after';\n", encoding="utf-8")
+                write_architecture_markdown(workspace, profile, ["Dirty"])
+
+                self._assert_ok(
+                    run_build(
+                        [
+                            "history",
+                            "restore",
+                            "--config",
+                            str(config_path),
+                            "--to",
+                            str(checkpoint_id),
+                            "--force",
+                            "--json",
+                            str(out_dir / "history.restore.rename.json"),
+                        ]
+                    ),
+                    f"history restore rename ({profile})",
+                )
+                restored_payload = read_json(out_dir / "history.restore.rename.json")
+                self.assertEqual(restored_payload["status"], "applied")
+                self.assertTrue(original_code.exists())
+                self.assertFalse(renamed_code.exists())
+                self.assertEqual(original_code.read_text(encoding="utf-8"), "export const name = 'before';\n")
+
+    def test_history_restore_recovers_utf8_text_content(self) -> None:
+        for profile in SCHEMA_PROFILES:
+            with self.subTest(schema_profile=profile):
+                tempdir, workspace = copy_scenario_to_workspace("feature_modify_node")
+                self.addCleanup(tempdir.cleanup)
+                config_path = workspace / ".iwp-lint.yaml"
+                out_dir = workspace / "out"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                apply_schema_profile(config_path, profile)
+
+                write_architecture_markdown(workspace, profile, ["Alpha"])
+                write_links_for_source(workspace, "architecture.md")
+                utf8_code = workspace / "_ir/src/utf8_note.ts"
+                baseline_text = "export const note = '你好，🌍';\n"
+                utf8_code.write_text(baseline_text, encoding="utf-8")
+                self._assert_ok(
+                    run_build(
+                        [
+                            "history",
+                            "checkpoint",
+                            "--config",
+                            str(config_path),
+                            "--message",
+                            "utf8 baseline",
+                            "--json",
+                            str(out_dir / "history.checkpoint.utf8.json"),
+                        ]
+                    ),
+                    f"history checkpoint utf8 ({profile})",
+                )
+                checkpoint_id = int(read_json(out_dir / "history.checkpoint.utf8.json")["checkpoint_id"])
+
+                utf8_code.write_text("export const note = 'changed';\n", encoding="utf-8")
+                write_architecture_markdown(workspace, profile, ["Dirty"])
+                self._assert_ok(
+                    run_build(
+                        [
+                            "history",
+                            "restore",
+                            "--config",
+                            str(config_path),
+                            "--to",
+                            str(checkpoint_id),
+                            "--force",
+                            "--json",
+                            str(out_dir / "history.restore.utf8.json"),
+                        ]
+                    ),
+                    f"history restore utf8 ({profile})",
+                )
+                restored_payload = read_json(out_dir / "history.restore.utf8.json")
+                self.assertEqual(restored_payload["status"], "applied")
+                self.assertEqual(utf8_code.read_text(encoding="utf-8"), baseline_text)
+
+    def test_history_restore_remains_stable_across_multi_round_jumps(self) -> None:
+        for profile in SCHEMA_PROFILES:
+            with self.subTest(schema_profile=profile):
+                tempdir, workspace = copy_scenario_to_workspace("feature_modify_node")
+                self.addCleanup(tempdir.cleanup)
+                config_path = workspace / ".iwp-lint.yaml"
+                out_dir = workspace / "out"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                apply_schema_profile(config_path, profile)
+
+                write_architecture_markdown(workspace, profile, ["Alpha"])
+                write_links_for_source(workspace, "architecture.md")
+                code_file = workspace / "_ir/src/round.ts"
+                code_file.write_text("export const round = 0;\n", encoding="utf-8")
+
+                checkpoint_by_round: dict[int, int] = {}
+                expected_markdown_by_round: dict[int, str] = {}
+                expected_code_by_round: dict[int, str] = {}
+
+                for round_id in range(5):
+                    anchors = ["Alpha"] + [f"Node{idx}" for idx in range(1, round_id + 1)]
+                    write_architecture_markdown(workspace, profile, anchors)
+                    code_text = f"export const round = {round_id};\n"
+                    code_file.write_text(code_text, encoding="utf-8")
+                    markdown_text = (workspace / "InstructWare.iw/architecture.md").read_text(
+                        encoding="utf-8"
+                    )
+                    self._assert_ok(
+                        run_build(
+                            [
+                                "history",
+                                "checkpoint",
+                                "--config",
+                                str(config_path),
+                                "--message",
+                                f"round {round_id}",
+                                "--json",
+                                str(out_dir / f"history.checkpoint.round-{round_id}.json"),
+                            ]
+                        ),
+                        f"history checkpoint round {round_id} ({profile})",
+                    )
+                    checkpoint_payload = read_json(out_dir / f"history.checkpoint.round-{round_id}.json")
+                    checkpoint_by_round[round_id] = int(checkpoint_payload["checkpoint_id"])
+                    expected_markdown_by_round[round_id] = markdown_text
+                    expected_code_by_round[round_id] = code_text
+
+                for round_id in (4, 2, 0, 3, 1, 4):
+                    self._assert_ok(
+                        run_build(
+                            [
+                                "history",
+                                "restore",
+                                "--config",
+                                str(config_path),
+                                "--to",
+                                str(checkpoint_by_round[round_id]),
+                                "--force",
+                                "--json",
+                                str(out_dir / f"history.restore.round-{round_id}.json"),
+                            ]
+                        ),
+                        f"history restore round {round_id} ({profile})",
+                    )
+                    restored_payload = read_json(out_dir / f"history.restore.round-{round_id}.json")
+                    self.assertEqual(restored_payload["status"], "applied")
+                    markdown_after = (workspace / "InstructWare.iw/architecture.md").read_text(
+                        encoding="utf-8"
+                    )
+                    code_after = code_file.read_text(encoding="utf-8")
+                    self.assertEqual(markdown_after, expected_markdown_by_round[round_id])
+                    self.assertEqual(code_after, expected_code_by_round[round_id])
+
 
 if __name__ == "__main__":
     unittest.main()
