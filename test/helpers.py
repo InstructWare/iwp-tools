@@ -53,7 +53,63 @@ def copy_scenario_to_workspace(scenario: str) -> tuple[tempfile.TemporaryDirecto
     shared_schema_dst = workspace.parent / "schema"
     if shared_schema_src.exists():
         shutil.copytree(shared_schema_src, shared_schema_dst, dirs_exist_ok=True)
+    _inject_tracking_config(workspace / ".iwp-lint.yaml")
     return tempdir, workspace
+
+
+def _inject_tracking_config(config_path: Path) -> None:
+    if not config_path.exists():
+        return
+    lines = config_path.read_text(encoding="utf-8").splitlines()
+    if any(line.strip() == "tracking:" for line in lines):
+        return
+
+    include_start = -1
+    include_end = -1
+    include_items: list[str] = []
+    for idx, line in enumerate(lines):
+        if line.startswith("include_ext:"):
+            include_start = idx
+            include_end = idx + 1
+            cursor = idx + 1
+            while cursor < len(lines) and lines[cursor].startswith("  - "):
+                include_items.append(lines[cursor].split("-", 1)[1].strip())
+                include_end = cursor + 1
+                cursor += 1
+            break
+
+    normalized_include = [item for item in include_items if item]
+    if not normalized_include:
+        normalized_include = [".ts"]
+    tracking_block = [
+        "tracking:",
+        "  protocol:",
+        "    include_ext:",
+        *[f"      - {ext}" for ext in normalized_include],
+        "    exclude_globs:",
+        '      - "**/node_modules/**"',
+        '      - "**/dist/**"',
+        '      - "**/__pycache__/**"',
+        '      - "**/.pytest_cache/**"',
+        "  snapshot:",
+        "    include_ext:",
+        *[f"      - {ext}" for ext in normalized_include],
+        "    exclude_globs:",
+        '      - "**/node_modules/**"',
+        '      - "**/dist/**"',
+        '      - "**/__pycache__/**"',
+        '      - "**/.pytest_cache/**"',
+    ]
+
+    if include_start >= 0:
+        updated = lines[:include_start] + tracking_block + lines[include_end:]
+    else:
+        insert_at = next(
+            (idx for idx, line in enumerate(lines) if line.startswith("test_globs:")),
+            len(lines),
+        )
+        updated = lines[:insert_at] + tracking_block + lines[insert_at:]
+    config_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 
 
 def run_python_module(module: str, args: list[str], cwd: Path | None = None) -> CmdResult:
