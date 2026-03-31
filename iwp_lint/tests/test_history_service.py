@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-from iwp_lint.config import LintConfig
+from iwp_lint.config import LintConfig, TrackingConfig, TrackingScopeConfig
 from iwp_lint.core.history_service import HistoryService
 from iwp_lint.core.session_service import SessionService
 from iwp_lint.parsers.md_parser import parse_markdown_nodes
@@ -46,6 +46,13 @@ def _workspace_tmpdir() -> tempfile.TemporaryDirectory[str]:
     return tempfile.TemporaryDirectory(dir=tmp_root, prefix=f"{uuid.uuid4().hex}_")
 
 
+def _tracking_ts() -> TrackingConfig:
+    return TrackingConfig(
+        protocol=TrackingScopeConfig(include_ext=[".ts"], exclude_globs=[]),
+        snapshot=TrackingScopeConfig(include_ext=[".ts"], exclude_globs=[]),
+    )
+
+
 class HistoryServiceTests(unittest.TestCase):
     def test_history_checkpoint_creates_snapshot_and_checkpoint(self) -> None:
         with _workspace_tmpdir() as td:
@@ -60,7 +67,7 @@ class HistoryServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -95,7 +102,7 @@ class HistoryServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -159,7 +166,7 @@ class HistoryServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -202,7 +209,7 @@ class HistoryServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -232,7 +239,7 @@ class HistoryServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -279,7 +286,7 @@ class HistoryServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -289,7 +296,9 @@ class HistoryServiceTests(unittest.TestCase):
             first = history.checkpoint(message="initial baseline")
             baseline_before_failed_checkpoint = int(first["snapshot_id"])
             _write(md_file, "# Architecture\n\n## Layout Tree\n- Beta\n")
-            with patch.object(history._backend, "create_checkpoint", side_effect=RuntimeError("boom")):
+            with patch.object(
+                history._backend, "create_checkpoint", side_effect=RuntimeError("boom")
+            ):
                 with self.assertRaises(RuntimeError):
                     history.checkpoint(message="should fail")
             listed = history.list_checkpoints()
@@ -312,7 +321,7 @@ class HistoryServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -364,7 +373,7 @@ class HistoryServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -403,7 +412,7 @@ class HistoryServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",

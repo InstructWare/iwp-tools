@@ -515,7 +515,9 @@ class HistoryRestoreFlowBuildE2E(unittest.TestCase):
                     ),
                     f"history checkpoint rename ({profile})",
                 )
-                checkpoint_id = int(read_json(out_dir / "history.checkpoint.rename.json")["checkpoint_id"])
+                checkpoint_id = int(
+                    read_json(out_dir / "history.checkpoint.rename.json")["checkpoint_id"]
+                )
 
                 renamed_code = workspace / "_ir/src/renamed_target.ts"
                 original_code.rename(renamed_code)
@@ -542,7 +544,9 @@ class HistoryRestoreFlowBuildE2E(unittest.TestCase):
                 self.assertEqual(restored_payload["status"], "applied")
                 self.assertTrue(original_code.exists())
                 self.assertFalse(renamed_code.exists())
-                self.assertEqual(original_code.read_text(encoding="utf-8"), "export const name = 'before';\n")
+                self.assertEqual(
+                    original_code.read_text(encoding="utf-8"), "export const name = 'before';\n"
+                )
 
     def test_history_restore_recovers_utf8_text_content(self) -> None:
         for profile in SCHEMA_PROFILES:
@@ -574,7 +578,9 @@ class HistoryRestoreFlowBuildE2E(unittest.TestCase):
                     ),
                     f"history checkpoint utf8 ({profile})",
                 )
-                checkpoint_id = int(read_json(out_dir / "history.checkpoint.utf8.json")["checkpoint_id"])
+                checkpoint_id = int(
+                    read_json(out_dir / "history.checkpoint.utf8.json")["checkpoint_id"]
+                )
 
                 utf8_code.write_text("export const note = 'changed';\n", encoding="utf-8")
                 write_architecture_markdown(workspace, profile, ["Dirty"])
@@ -640,7 +646,9 @@ class HistoryRestoreFlowBuildE2E(unittest.TestCase):
                         ),
                         f"history checkpoint round {round_id} ({profile})",
                     )
-                    checkpoint_payload = read_json(out_dir / f"history.checkpoint.round-{round_id}.json")
+                    checkpoint_payload = read_json(
+                        out_dir / f"history.checkpoint.round-{round_id}.json"
+                    )
                     checkpoint_by_round[round_id] = int(checkpoint_payload["checkpoint_id"])
                     expected_markdown_by_round[round_id] = markdown_text
                     expected_code_by_round[round_id] = code_text

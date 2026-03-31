@@ -25,7 +25,9 @@ class HistoryBackend(Protocol):
 
     def history_stats(self) -> dict[str, Any]: ...
 
-    def create_snapshot(self, files: list[SnapshotFile], *, set_as_baseline: bool = True) -> int: ...
+    def create_snapshot(
+        self, files: list[SnapshotFile], *, set_as_baseline: bool = True
+    ) -> int: ...
 
     def create_git_checkpoint(
         self,
@@ -49,7 +51,9 @@ class HistoryBackend(Protocol):
         metadata: dict[str, object] | None = None,
     ) -> int: ...
 
-    def append_history_event(self, event_type: str, payload: dict[str, object] | None = None) -> None: ...
+    def append_history_event(
+        self, event_type: str, payload: dict[str, object] | None = None
+    ) -> None: ...
 
     def get_checkpoint(self, checkpoint_id: int) -> dict[str, object] | None: ...
 
@@ -84,8 +88,8 @@ class SnapshotStoreHistoryBackend:
             iwp_root=self._config.iwp_root,
             iwp_root_path=self._config.iwp_root_path,
             code_roots=self._config.code_roots,
-            include_ext=self._config.include_ext,
-            code_exclude_globs=self._config.code_exclude_globs,
+            include_ext=self._config.snapshot_include_ext,
+            code_exclude_globs=self._config.snapshot_exclude_globs,
             exclude_markdown_globs=self._config.schema_exclude_markdown_globs,
         )
 
@@ -134,7 +138,9 @@ class SnapshotStoreHistoryBackend:
             metadata=metadata,
         )
 
-    def append_history_event(self, event_type: str, payload: dict[str, object] | None = None) -> None:
+    def append_history_event(
+        self, event_type: str, payload: dict[str, object] | None = None
+    ) -> None:
         self._store.append_history_event(event_type, payload)
 
     def get_checkpoint(self, checkpoint_id: int) -> dict[str, object] | None:
@@ -587,7 +593,9 @@ class HistoryService:
                     "removed_snapshot_ids": [],
                     "kept_checkpoint_ids": [],
                 }
-            latest_checkpoint_id = self._require_int(rows[0]["checkpoint_id"], field="checkpoint_id")
+            latest_checkpoint_id = self._require_int(
+                rows[0]["checkpoint_id"], field="checkpoint_id"
+            )
             latest_restore_before_id = next(
                 (
                     self._require_int(item["checkpoint_id"], field="checkpoint_id")
@@ -771,11 +779,15 @@ class HistoryService:
     ) -> None:
         safe_delete_paths: list[Path] = []
         for rel_path in to_delete:
-            abs_path = self._resolve_workspace_path_or_raise(project_root=project_root, rel_path=rel_path)
+            abs_path = self._resolve_workspace_path_or_raise(
+                project_root=project_root, rel_path=rel_path
+            )
             safe_delete_paths.append(abs_path)
         safe_write_paths: list[tuple[Path, str]] = []
         for rel_path, item in target_snapshot.items():
-            abs_path = self._resolve_workspace_path_or_raise(project_root=project_root, rel_path=rel_path)
+            abs_path = self._resolve_workspace_path_or_raise(
+                project_root=project_root, rel_path=rel_path
+            )
             safe_write_paths.append((abs_path, item.content or ""))
         for abs_path in safe_delete_paths:
             if abs_path.exists() and abs_path.is_file():

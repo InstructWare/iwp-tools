@@ -30,8 +30,8 @@ def normalize_links(config: LintConfig, write: bool) -> dict[str, Any]:
     files = discover_code_files(
         config.project_root,
         config.code_roots,
-        config.include_ext,
-        config.code_exclude_globs,
+        config.protocol_include_ext,
+        config.protocol_exclude_globs,
     )
     changed_files: list[str] = []
     removed_stale = 0

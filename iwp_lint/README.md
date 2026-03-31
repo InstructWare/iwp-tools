@@ -244,11 +244,21 @@ schema:
 node_registry_file: .iwp/node_registry.v1.json
 node_id_min_length: 4
 node_catalog_file: .iwp/node_catalog.v1.json
-code_exclude_globs:
-  - "**/node_modules/**"
-  - "**/dist/**"
-  - "**/__pycache__/**"
-  - "**/.pytest_cache/**"
+tracking:
+  protocol:
+    include_ext: [.vue, .py, .ts, .tsx, .js, .jsx]
+    exclude_globs:
+      - "**/node_modules/**"
+      - "**/dist/**"
+      - "**/__pycache__/**"
+      - "**/.pytest_cache/**"
+  snapshot:
+    include_ext: [.vue, .py, .ts, .tsx, .js, .jsx, .sh, .yaml, .yml, .json, .toml]
+    exclude_globs:
+      - "**/node_modules/**"
+      - "**/dist/**"
+      - "**/__pycache__/**"
+      - "**/.pytest_cache/**"
 cache:
   node_index_db_file: .iwp/cache/node_index.v1.sqlite
 compiled:
@@ -294,7 +304,10 @@ execution_presets:
       min_severity: error
 ```
 
-`code_exclude_globs` applies to code discovery paths used by lint/normalize/sidecar/snapshot flows.
+`tracking` is required in project config and must define both `protocol` and `snapshot`.
+
+`tracking.protocol` applies to lint/diff/normalize/sidecar code discovery.
+`tracking.snapshot` applies to checkpoint/restore/baseline-diff snapshot collection.
 Default excludes are:
 
 - `**/node_modules/**`

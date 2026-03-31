@@ -32,8 +32,8 @@ def write_code_sidecar(
     code_files = discover_code_files(
         config.project_root,
         config.code_roots,
-        config.include_ext,
-        config.code_exclude_globs,
+        config.protocol_include_ext,
+        config.protocol_exclude_globs,
     )
     links, scan_diagnostics = scan_links(
         config.project_root,
@@ -220,8 +220,8 @@ def verify_code_sidecar_freshness(
         current_files = discover_code_files(
             config.project_root,
             config.code_roots,
-            config.include_ext,
-            config.code_exclude_globs,
+            config.protocol_include_ext,
+            config.protocol_exclude_globs,
         )
         expected = {
             str(item.get("path", "")): str(item.get("sha256", ""))

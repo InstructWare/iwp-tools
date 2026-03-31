@@ -12,11 +12,25 @@ from .versioning import (
 )
 
 CRITICAL_GRANULARITIES = {"all", "title_only"}
-DEFAULT_CODE_EXCLUDE_GLOBS = [
+DEFAULT_TRACKING_EXCLUDE_GLOBS = [
     "**/node_modules/**",
     "**/dist/**",
     "**/__pycache__/**",
     "**/.pytest_cache/**",
+]
+DEFAULT_PROTOCOL_INCLUDE_EXT = [".vue", ".py", ".ts", ".tsx", ".js", ".jsx"]
+DEFAULT_SNAPSHOT_INCLUDE_EXT = [
+    ".vue",
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".sh",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".toml",
 ]
 
 
@@ -125,6 +139,18 @@ class AuthoringConfig:
     strict_scopes: list[str] = field(default_factory=list)
 
 
+@dataclass
+class TrackingScopeConfig:
+    include_ext: list[str] = field(default_factory=list)
+    exclude_globs: list[str] = field(default_factory=list)
+
+
+@dataclass
+class TrackingConfig:
+    protocol: TrackingScopeConfig = field(default_factory=TrackingScopeConfig)
+    snapshot: TrackingScopeConfig = field(default_factory=TrackingScopeConfig)
+
+
 def _default_coverage_profiles() -> list[CoverageProfile]:
     return [
         CoverageProfile(
@@ -180,10 +206,18 @@ class LintConfig:
     project_root: Path
     iwp_root: str = "InstructWare.iw"
     code_roots: list[str] = field(default_factory=lambda: ["."])
-    include_ext: list[str] = field(
-        default_factory=lambda: [".vue", ".py", ".ts", ".tsx", ".js", ".jsx"]
+    tracking: TrackingConfig = field(
+        default_factory=lambda: TrackingConfig(
+            protocol=TrackingScopeConfig(
+                include_ext=list(DEFAULT_PROTOCOL_INCLUDE_EXT),
+                exclude_globs=list(DEFAULT_TRACKING_EXCLUDE_GLOBS),
+            ),
+            snapshot=TrackingScopeConfig(
+                include_ext=list(DEFAULT_SNAPSHOT_INCLUDE_EXT),
+                exclude_globs=list(DEFAULT_TRACKING_EXCLUDE_GLOBS),
+            ),
+        )
     )
-    code_exclude_globs: list[str] = field(default_factory=lambda: list(DEFAULT_CODE_EXCLUDE_GLOBS))
     test_globs: list[str] = field(
         default_factory=lambda: ["**/tests/**", "**/*.spec.*", "**/*.test.*"]
     )
@@ -219,9 +253,37 @@ class LintConfig:
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     execution_presets: dict[str, dict[str, Any]] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if isinstance(self.tracking, dict):
+            self.tracking = _load_tracking(self.tracking)
+
     @property
     def iwp_root_path(self) -> Path:
         return (self.project_root / self.iwp_root).resolve()
+
+    @property
+    def protocol_include_ext(self) -> list[str]:
+        return list(self.tracking.protocol.include_ext)
+
+    @property
+    def protocol_exclude_globs(self) -> list[str]:
+        return list(self.tracking.protocol.exclude_globs)
+
+    @property
+    def snapshot_include_ext(self) -> list[str]:
+        return list(self.tracking.snapshot.include_ext)
+
+    @property
+    def snapshot_exclude_globs(self) -> list[str]:
+        return list(self.tracking.snapshot.exclude_globs)
+
+    @property
+    def include_ext(self) -> list[str]:
+        return self.protocol_include_ext
+
+    @property
+    def code_exclude_globs(self) -> list[str]:
+        return self.protocol_exclude_globs
 
 
 def _load_yaml_or_json(config_path: Path) -> dict[str, Any]:
@@ -246,6 +308,7 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
 
     config_path = Path(config_file).resolve()
     raw = _load_yaml_or_json(config_path)
+    tracking = _load_tracking(raw.get("tracking"))
     thresholds_raw = raw.get("thresholds", {})
     base_thresholds = _load_thresholds(thresholds_raw, fallback=None)
     mode_thresholds_raw = raw.get("thresholds_by_mode", {})
@@ -276,8 +339,7 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
         project_root=project_root,
         iwp_root=raw.get("iwp_root", "InstructWare.iw"),
         code_roots=list(raw.get("code_roots", ["."])),
-        include_ext=list(raw.get("include_ext", [".vue", ".py", ".ts", ".tsx", ".js", ".jsx"])),
-        code_exclude_globs=list(raw.get("code_exclude_globs", DEFAULT_CODE_EXCLUDE_GLOBS)),
+        tracking=tracking,
         test_globs=list(raw.get("test_globs", ["**/tests/**", "**/*.spec.*", "**/*.test.*"])),
         allow_multi_link_per_symbol=bool(raw.get("allow_multi_link_per_symbol", False)),
         enable_profile_coverage=bool(raw.get("enable_profile_coverage", True)),
@@ -387,13 +449,75 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
         ),
         workflow=WorkflowConfig(
             mode=_load_workflow_mode(
-                workflow_raw.get("mode", "aligned")
-                if isinstance(workflow_raw, dict)
-                else "aligned"
+                workflow_raw.get("mode", "aligned") if isinstance(workflow_raw, dict) else "aligned"
             ),
         ),
         execution_presets=_load_execution_presets(raw.get("execution_presets", {})),
     )
+
+
+def _load_tracking(raw_tracking: Any) -> TrackingConfig:
+    if raw_tracking is None:
+        raise RuntimeError(
+            "missing required config: `tracking`.\n"
+            "expected structure:\n"
+            "tracking:\n"
+            "  protocol:\n"
+            "    include_ext: [...]\n"
+            "    exclude_globs: [...]\n"
+            "  snapshot:\n"
+            "    include_ext: [...]\n"
+            "    exclude_globs: [...]"
+        )
+    if not isinstance(raw_tracking, dict):
+        raise RuntimeError("`tracking` must be an object")
+    protocol_raw = raw_tracking.get("protocol")
+    snapshot_raw = raw_tracking.get("snapshot")
+    if not isinstance(protocol_raw, dict) or not isinstance(snapshot_raw, dict):
+        raise RuntimeError("`tracking.protocol` and `tracking.snapshot` must both be objects")
+    protocol_include_ext = _normalize_include_ext(protocol_raw.get("include_ext"))
+    snapshot_include_ext = _normalize_include_ext(snapshot_raw.get("include_ext"))
+    protocol_exclude_globs = _normalize_globs(protocol_raw.get("exclude_globs"))
+    snapshot_exclude_globs = _normalize_globs(snapshot_raw.get("exclude_globs"))
+    if not protocol_include_ext:
+        raise RuntimeError("`tracking.protocol.include_ext` must not be empty")
+    if not snapshot_include_ext:
+        raise RuntimeError("`tracking.snapshot.include_ext` must not be empty")
+    return TrackingConfig(
+        protocol=TrackingScopeConfig(
+            include_ext=protocol_include_ext,
+            exclude_globs=protocol_exclude_globs,
+        ),
+        snapshot=TrackingScopeConfig(
+            include_ext=snapshot_include_ext,
+            exclude_globs=snapshot_exclude_globs,
+        ),
+    )
+
+
+def _normalize_include_ext(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        raise RuntimeError("tracking scope `include_ext` must be a list")
+    normalized: list[str] = []
+    for item in raw:
+        value = str(item).strip()
+        if not value:
+            continue
+        normalized.append(value if value.startswith(".") else f".{value}")
+    return sorted(set(normalized))
+
+
+def _normalize_globs(raw: Any) -> list[str]:
+    if raw is None:
+        return list(DEFAULT_TRACKING_EXCLUDE_GLOBS)
+    if not isinstance(raw, list):
+        raise RuntimeError("tracking scope `exclude_globs` must be a list")
+    normalized: list[str] = []
+    for item in raw:
+        value = str(item).strip()
+        if value:
+            normalized.append(value)
+    return normalized
 
 
 def _load_coverage_profiles(raw_profiles: Any) -> list[CoverageProfile]:

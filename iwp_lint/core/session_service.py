@@ -108,8 +108,8 @@ class SessionService:
             iwp_root=self._config.iwp_root,
             iwp_root_path=self._config.iwp_root_path,
             code_roots=self._config.code_roots,
-            include_ext=self._config.include_ext,
-            code_exclude_globs=self._config.code_exclude_globs,
+            include_ext=self._config.snapshot_include_ext,
+            code_exclude_globs=self._config.snapshot_exclude_globs,
             exclude_markdown_globs=self._config.schema_exclude_markdown_globs,
         )
         current = {item.path: item for item in current_files}
@@ -124,7 +124,11 @@ class SessionService:
             }
         )
         changed_code_files = sorted(
-            {item for item in changed_files if Path(item).suffix in set(self._config.include_ext)}
+            {
+                item
+                for item in changed_files
+                if Path(item).suffix in set(self._config.protocol_include_ext)
+            }
         )
         resolved_level = (code_diff_level or self._config.session.code_diff_level).strip().lower()
         if resolved_level not in {"summary", "hunk"}:
@@ -143,7 +147,7 @@ class SessionService:
         code_change_details = compute_code_change_details(
             previous,
             current,
-            include_ext=self._config.include_ext,
+            include_ext=self._config.protocol_include_ext,
             options=CodeDiffOptions(
                 level=resolved_level_literal,
                 context_lines=max(0, resolved_context),
@@ -501,8 +505,8 @@ class SessionService:
             iwp_root=self._config.iwp_root,
             iwp_root_path=self._config.iwp_root_path,
             code_roots=self._config.code_roots,
-            include_ext=self._config.include_ext,
-            code_exclude_globs=self._config.code_exclude_globs,
+            include_ext=self._config.snapshot_include_ext,
+            code_exclude_globs=self._config.snapshot_exclude_globs,
             exclude_markdown_globs=self._config.schema_exclude_markdown_globs,
         )
         commit_message = (message or "").strip() or "session commit baseline checkpoint"

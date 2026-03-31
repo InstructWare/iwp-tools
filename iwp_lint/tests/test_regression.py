@@ -12,12 +12,14 @@ from iwp_build.cli import build_parser as build_build_parser
 from iwp_build.output import collect_remediation_hints
 from iwp_lint.cli import _print_nodes_result
 from iwp_lint.config import (
-    DEFAULT_CODE_EXCLUDE_GLOBS,
+    DEFAULT_TRACKING_EXCLUDE_GLOBS,
     AuthoringConfig,
     LintConfig,
     LintThresholds,
     ModeThresholds,
     TinyDiffConfig,
+    TrackingConfig,
+    TrackingScopeConfig,
     load_config,
     resolve_schema_source,
 )
@@ -153,6 +155,22 @@ def _workspace_tmpdir() -> tempfile.TemporaryDirectory[str]:
     tmp_root = Path.cwd() / ".tmp_iwp_lint_tests"
     tmp_root.mkdir(parents=True, exist_ok=True)
     return tempfile.TemporaryDirectory(dir=tmp_root, prefix=f"{uuid.uuid4().hex}_")
+
+
+def _tracking_ts() -> TrackingConfig:
+    return TrackingConfig(
+        protocol=TrackingScopeConfig(include_ext=[".ts"], exclude_globs=[]),
+        snapshot=TrackingScopeConfig(include_ext=[".ts"], exclude_globs=[]),
+    )
+
+
+def _tracking_config_raw() -> dict[str, object]:
+    return {
+        "tracking": {
+            "protocol": {"include_ext": [".ts"]},
+            "snapshot": {"include_ext": [".ts"]},
+        }
+    }
 
 
 class IwpLintRegressionTests(unittest.TestCase):
@@ -316,7 +334,7 @@ class IwpLintRegressionTests(unittest.TestCase):
         with _workspace_tmpdir() as td:
             root = Path(td)
             cfg_dir = root / "ci"
-            _write(cfg_dir / ".iwp-lint.json", "{}")
+            _write(cfg_dir / ".iwp-lint.json", json.dumps(_tracking_config_raw()))
             config = load_config(str(cfg_dir / ".iwp-lint.json"), cwd=root / "somewhere")
             self.assertEqual(config.project_root, cfg_dir.resolve())
 
@@ -326,7 +344,7 @@ class IwpLintRegressionTests(unittest.TestCase):
             cfg_dir = root / "ci"
             _write(
                 cfg_dir / ".iwp-lint.json",
-                json.dumps({"project_root": ".."}),
+                json.dumps({**_tracking_config_raw(), "project_root": ".."}),
             )
             config = load_config(str(cfg_dir / ".iwp-lint.json"), cwd=root / "other")
             self.assertEqual(config.project_root, root.resolve())
@@ -335,16 +353,35 @@ class IwpLintRegressionTests(unittest.TestCase):
         with _workspace_tmpdir() as td:
             root = Path(td)
             cfg_dir = root / "ci"
-            _write(cfg_dir / ".iwp-lint.json", "{}")
+            _write(cfg_dir / ".iwp-lint.json", json.dumps(_tracking_config_raw()))
             config_default = load_config(str(cfg_dir / ".iwp-lint.json"))
-            self.assertEqual(config_default.code_exclude_globs, DEFAULT_CODE_EXCLUDE_GLOBS)
+            self.assertEqual(config_default.protocol_exclude_globs, DEFAULT_TRACKING_EXCLUDE_GLOBS)
 
             _write(
                 cfg_dir / ".iwp-lint.custom.json",
-                json.dumps({"code_exclude_globs": ["**/vendor/**"]}),
+                json.dumps(
+                    {
+                        **_tracking_config_raw(),
+                        "tracking": {
+                            "protocol": {
+                                "include_ext": [".ts"],
+                                "exclude_globs": ["**/vendor/**"],
+                            },
+                            "snapshot": {"include_ext": [".ts"], "exclude_globs": []},
+                        },
+                    }
+                ),
             )
             config_custom = load_config(str(cfg_dir / ".iwp-lint.custom.json"))
-            self.assertEqual(config_custom.code_exclude_globs, ["**/vendor/**"])
+            self.assertEqual(config_custom.protocol_exclude_globs, ["**/vendor/**"])
+
+    def test_config_requires_tracking_section(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            cfg_dir = root / "ci"
+            _write(cfg_dir / ".iwp-lint.missing-tracking.json", json.dumps({"project_root": ".."}))
+            with self.assertRaisesRegex(RuntimeError, "missing required config: `tracking`"):
+                load_config(str(cfg_dir / ".iwp-lint.missing-tracking.json"))
 
     def test_config_page_only_can_be_enabled(self) -> None:
         with _workspace_tmpdir() as td:
@@ -352,7 +389,7 @@ class IwpLintRegressionTests(unittest.TestCase):
             cfg_dir = root / "ci"
             _write(
                 cfg_dir / ".iwp-lint.json",
-                json.dumps({"schema": {"page_only": {"enabled": True}}}),
+                json.dumps({**_tracking_config_raw(), "schema": {"page_only": {"enabled": True}}}),
             )
             config = load_config(str(cfg_dir / ".iwp-lint.json"))
             self.assertTrue(config.page_only.enabled)
@@ -361,7 +398,7 @@ class IwpLintRegressionTests(unittest.TestCase):
         with _workspace_tmpdir() as td:
             root = Path(td)
             cfg_dir = root / "ci"
-            _write(cfg_dir / ".iwp-lint.json", json.dumps({}))
+            _write(cfg_dir / ".iwp-lint.json", json.dumps(_tracking_config_raw()))
             config = load_config(str(cfg_dir / ".iwp-lint.json"))
             self.assertTrue(config.authoring.strict_annotation_params)
 
@@ -371,7 +408,9 @@ class IwpLintRegressionTests(unittest.TestCase):
             cfg_dir = root / "ci"
             _write(
                 cfg_dir / ".iwp-lint.json",
-                json.dumps({"authoring": {"strict_annotation_params": False}}),
+                json.dumps(
+                    {**_tracking_config_raw(), "authoring": {"strict_annotation_params": False}}
+                ),
             )
             config = load_config(str(cfg_dir / ".iwp-lint.json"))
             self.assertFalse(config.authoring.strict_annotation_params)
@@ -380,7 +419,7 @@ class IwpLintRegressionTests(unittest.TestCase):
         with _workspace_tmpdir() as td:
             root = Path(td)
             cfg_dir = root / "ci"
-            _write(cfg_dir / ".iwp-lint.json", json.dumps({}))
+            _write(cfg_dir / ".iwp-lint.json", json.dumps(_tracking_config_raw()))
             config = load_config(str(cfg_dir / ".iwp-lint.json"))
             self.assertEqual(config.workflow.mode, "aligned")
 
@@ -390,13 +429,13 @@ class IwpLintRegressionTests(unittest.TestCase):
             cfg_dir = root / "ci"
             _write(
                 cfg_dir / ".iwp-lint.fast.json",
-                json.dumps({"workflow": {"mode": "fast"}}),
+                json.dumps({**_tracking_config_raw(), "workflow": {"mode": "fast"}}),
             )
             fast_config = load_config(str(cfg_dir / ".iwp-lint.fast.json"))
             self.assertEqual(fast_config.workflow.mode, "fast")
             _write(
                 cfg_dir / ".iwp-lint.invalid.json",
-                json.dumps({"workflow": {"mode": "unknown"}}),
+                json.dumps({**_tracking_config_raw(), "workflow": {"mode": "unknown"}}),
             )
             invalid_config = load_config(str(cfg_dir / ".iwp-lint.invalid.json"))
             self.assertEqual(invalid_config.workflow.mode, "aligned")
@@ -928,7 +967,7 @@ class IwpLintRegressionTests(unittest.TestCase):
                 project_root=root.resolve(),
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
             )
             from iwp_lint.core.engine import run_full
@@ -976,7 +1015,7 @@ class IwpLintRegressionTests(unittest.TestCase):
                 project_root=root.resolve(),
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
             )
             check = normalize_links(config=config, write=False)
@@ -1285,7 +1324,7 @@ class IwpLintRegressionTests(unittest.TestCase):
                 project_root=root.resolve(),
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=DEFAULT_NODE_REGISTRY_FILE,
             )
@@ -1322,7 +1361,7 @@ class IwpLintRegressionTests(unittest.TestCase):
                 project_root=root.resolve(),
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=DEFAULT_NODE_REGISTRY_FILE,
             )
@@ -1408,7 +1447,7 @@ class IwpLintRegressionTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
             )
             store = SnapshotStore((root / config.snapshot_db_file).resolve())
@@ -1457,7 +1496,7 @@ class IwpLintRegressionTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
             )
             store = SnapshotStore((root / config.snapshot_db_file).resolve())
@@ -1518,7 +1557,7 @@ class IwpLintRegressionTests(unittest.TestCase):
                 project_root=root.resolve(),
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
             )
             from iwp_lint.core.engine import run_full
@@ -1561,7 +1600,10 @@ class IwpLintRegressionTests(unittest.TestCase):
                 "project_root": root.resolve(),
                 "iwp_root": "InstructWare.iw",
                 "schema_file": "schema.json",
-                "include_ext": [".ts"],
+                "tracking": {
+                    "protocol": {"include_ext": [".ts"], "exclude_globs": []},
+                    "snapshot": {"include_ext": [".ts"], "exclude_globs": []},
+                },
                 "code_roots": ["_ir/src"],
                 "critical_node_patterns": ["trigger", "execution flow"],
             }
@@ -1605,7 +1647,7 @@ class IwpLintRegressionTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=DEFAULT_NODE_REGISTRY_FILE,
             )
@@ -1651,7 +1693,7 @@ class IwpLintRegressionTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=DEFAULT_NODE_REGISTRY_FILE,
                 thresholds=LintThresholds(node_tested_min=100.0),

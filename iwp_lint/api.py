@@ -28,8 +28,8 @@ def snapshot_action(config: LintConfig, action: str) -> dict[str, Any]:
             iwp_root=config.iwp_root,
             iwp_root_path=config.iwp_root_path,
             code_roots=config.code_roots,
-            include_ext=config.include_ext,
-            code_exclude_globs=config.code_exclude_globs,
+            include_ext=config.snapshot_include_ext,
+            code_exclude_globs=config.snapshot_exclude_globs,
             exclude_markdown_globs=config.schema_exclude_markdown_globs,
         )
         snapshot_id = store.create_snapshot(files)
@@ -54,7 +54,9 @@ def snapshot_action(config: LintConfig, action: str) -> dict[str, Any]:
             if item.startswith(f"{config.iwp_root}/") and item.endswith(".md")
         }
         changed_code = {
-            item for item in diff.changed_files if Path(item).suffix in set(config.include_ext)
+            item
+            for item in diff.changed_files
+            if Path(item).suffix in set(config.protocol_include_ext)
         }
         nodes = _compute_impacted_nodes(config, diff)
         return {

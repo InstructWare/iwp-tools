@@ -8,7 +8,7 @@ from pathlib import Path
 
 from iwp_build.cli import _run_build, _run_verify
 from iwp_lint.api import compile_context, verify_code_sidecar_freshness
-from iwp_lint.config import LintConfig, PageOnlyConfig
+from iwp_lint.config import LintConfig, PageOnlyConfig, TrackingConfig, TrackingScopeConfig
 from iwp_lint.parsers.md_parser import parse_markdown_nodes
 from iwp_lint.vcs.snapshot_store import SnapshotStore
 
@@ -47,6 +47,13 @@ def _workspace_tmpdir() -> tempfile.TemporaryDirectory[str]:
     return tempfile.TemporaryDirectory(dir=tmp_root, prefix=f"{uuid.uuid4().hex}_")
 
 
+def _tracking_ts() -> TrackingConfig:
+    return TrackingConfig(
+        protocol=TrackingScopeConfig(include_ext=[".ts"], exclude_globs=[]),
+        snapshot=TrackingScopeConfig(include_ext=[".ts"], exclude_globs=[]),
+    )
+
+
 class IwpBuildCommitTests(unittest.TestCase):
     def test_build_json_exposes_page_only_mode_flag(self) -> None:
         with _workspace_tmpdir() as td:
@@ -70,7 +77,7 @@ class IwpBuildCommitTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -107,7 +114,7 @@ class IwpBuildCommitTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -147,7 +154,7 @@ class IwpBuildCommitTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -188,7 +195,7 @@ class IwpBuildCommitTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -249,7 +256,7 @@ class IwpBuildCommitTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",

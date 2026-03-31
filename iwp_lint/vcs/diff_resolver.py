@@ -41,8 +41,8 @@ class DiffProvider:
             iwp_root=config.iwp_root,
             iwp_root_path=config.iwp_root_path,
             code_roots=config.code_roots,
-            include_ext=config.include_ext,
-            code_exclude_globs=config.code_exclude_globs,
+            include_ext=config.snapshot_include_ext,
+            code_exclude_globs=config.snapshot_exclude_globs,
             exclude_markdown_globs=config.schema_exclude_markdown_globs,
         )
         current = {item.path: item for item in current_files}

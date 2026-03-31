@@ -140,9 +140,9 @@ def _build_mode_warnings(request: object) -> list[str]:
         return []
     config = getattr(request, "config", None)
     authoring = getattr(config, "authoring", None)
-    node_generation_mode = str(
-        getattr(authoring, "node_generation_mode", "structural")
-    ).strip().lower()
+    node_generation_mode = (
+        str(getattr(authoring, "node_generation_mode", "structural")).strip().lower()
+    )
     if node_generation_mode == "structural":
         return [
             "workflow.mode=fast with node_generation_mode=structural may generate high trace pressure; prefer checkpoint loop before aligned gate."

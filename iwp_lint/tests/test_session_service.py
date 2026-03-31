@@ -6,7 +6,14 @@ import unittest
 import uuid
 from pathlib import Path
 
-from iwp_lint.config import CoverageProfile, LintConfig, SessionConfig
+from iwp_lint.config import (
+    DEFAULT_TRACKING_EXCLUDE_GLOBS,
+    CoverageProfile,
+    LintConfig,
+    SessionConfig,
+    TrackingConfig,
+    TrackingScopeConfig,
+)
 from iwp_lint.core.session_service import SessionService
 from iwp_lint.parsers.md_parser import parse_markdown_nodes
 
@@ -45,6 +52,17 @@ def _workspace_tmpdir() -> tempfile.TemporaryDirectory[str]:
     return tempfile.TemporaryDirectory(dir=tmp_root, prefix=f"{uuid.uuid4().hex}_")
 
 
+def _tracking_ts() -> TrackingConfig:
+    return TrackingConfig(
+        protocol=TrackingScopeConfig(
+            include_ext=[".ts"], exclude_globs=list(DEFAULT_TRACKING_EXCLUDE_GLOBS)
+        ),
+        snapshot=TrackingScopeConfig(
+            include_ext=[".ts"], exclude_globs=list(DEFAULT_TRACKING_EXCLUDE_GLOBS)
+        ),
+    )
+
+
 class SessionServiceTests(unittest.TestCase):
     def test_session_start_rejects_parallel_active_session(self) -> None:
         with _workspace_tmpdir() as td:
@@ -61,7 +79,7 @@ class SessionServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -88,7 +106,7 @@ class SessionServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -153,7 +171,7 @@ class SessionServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -216,7 +234,7 @@ class SessionServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -280,7 +298,7 @@ class SessionServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir/src"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",
@@ -337,7 +355,7 @@ class SessionServiceTests(unittest.TestCase):
                 iwp_root="InstructWare.iw",
                 schema_file="schema.json",
                 snapshot_db_file=".iwp/cache/snapshots.sqlite",
-                include_ext=[".ts"],
+                tracking=_tracking_ts(),
                 code_roots=["_ir"],
                 node_registry_file=".iwp/node_registry.v1.json",
                 node_catalog_file=".iwp/node_catalog.v1.json",

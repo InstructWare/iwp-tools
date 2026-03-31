@@ -72,7 +72,9 @@ def run_diff(config: LintConfig, base: str | None, head: str | None) -> dict[str
     changed_md = {
         f for f in diff.changed_files if f.startswith(f"{config.iwp_root}/") and f.endswith(".md")
     }
-    changed_code = {f for f in diff.changed_files if Path(f).suffix in set(config.include_ext)}
+    changed_code = {
+        f for f in diff.changed_files if Path(f).suffix in set(config.protocol_include_ext)
+    }
     changed_md_rel = {Path(p).relative_to(config.iwp_root).as_posix() for p in changed_md}
     link_scope_nodes = [node for node in nodes if node.source_path in changed_md_rel]
     return _run_core(
@@ -156,8 +158,8 @@ def _run_core(
     code_files = discover_code_files(
         config.project_root,
         config.code_roots,
-        config.include_ext,
-        config.code_exclude_globs,
+        config.protocol_include_ext,
+        config.protocol_exclude_globs,
     )
     links, scan_diagnostics = scan_links(
         config.project_root, code_files, config.allow_multi_link_per_symbol
