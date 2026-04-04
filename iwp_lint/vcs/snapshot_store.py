@@ -341,6 +341,23 @@ class SnapshotStore:
             )
         return items
 
+    def list_referenced_git_commit_oids(self) -> list[str]:
+        self.ensure()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT git_commit_oid
+                FROM checkpoints
+                WHERE git_commit_oid IS NOT NULL AND TRIM(git_commit_oid) <> ''
+                """
+            ).fetchall()
+        oids: list[str] = []
+        for row in rows:
+            value = str(row[0]).strip()
+            if value:
+                oids.append(value)
+        return oids
+
     def latest_snapshot_info(self) -> dict[str, int | str] | None:
         snapshot_id = self.latest_snapshot_id()
         if snapshot_id is None:
@@ -635,13 +652,21 @@ def collect_workspace_files(
     include_ext: list[str],
     code_exclude_globs: list[str] | None = None,
     exclude_markdown_globs: list[str] | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> list[SnapshotFile]:
     files: list[SnapshotFile] = []
 
     for rel in list_markdown_rel_paths(iwp_root_path, exclude_markdown_globs):
         abs_path = iwp_root_path / rel
         project_rel = f"{iwp_root}/{rel}"
-        files.append(_to_snapshot_file(abs_path, project_rel, "markdown"))
+        files.append(
+            _to_snapshot_file(
+                abs_path,
+                project_rel,
+                "markdown",
+                max_file_size_bytes=max_file_size_bytes,
+            )
+        )
 
     for code_path in discover_code_files(
         project_root,
@@ -650,7 +675,14 @@ def collect_workspace_files(
         code_exclude_globs,
     ):
         rel = code_path.relative_to(project_root).as_posix()
-        files.append(_to_snapshot_file(code_path, rel, "code"))
+        files.append(
+            _to_snapshot_file(
+                code_path,
+                rel,
+                "code",
+                max_file_size_bytes=max_file_size_bytes,
+            )
+        )
 
     dedup: dict[str, SnapshotFile] = {}
     for item in files:
@@ -658,8 +690,20 @@ def collect_workspace_files(
     return sorted(dedup.values(), key=lambda item: item.path)
 
 
-def _to_snapshot_file(abs_path: Path, rel_path: str, kind: str) -> SnapshotFile:
+def _to_snapshot_file(
+    abs_path: Path,
+    rel_path: str,
+    kind: str,
+    *,
+    max_file_size_bytes: int | None = None,
+) -> SnapshotFile:
     stat = abs_path.stat()
+    if max_file_size_bytes is not None and int(stat.st_size) > int(max_file_size_bytes):
+        raise RuntimeError(
+            "snapshot file exceeds configured max size: "
+            f"{rel_path} ({int(stat.st_size)} bytes > {int(max_file_size_bytes)} bytes). "
+            "Adjust `tracking.snapshot.max_file_size_kb` or refine `tracking.snapshot.exclude_globs`."
+        )
     content = abs_path.read_text(encoding="utf-8")
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
     return SnapshotFile(

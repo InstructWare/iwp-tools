@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import tempfile
 import time
 import uuid
@@ -62,7 +64,11 @@ class HistoryBackend(Protocol):
     def load_snapshot(self, snapshot_id: int) -> dict[str, SnapshotFile]: ...
 
     def load_snapshot_for_checkpoint(
-        self, checkpoint: dict[str, object]
+        self,
+        checkpoint: dict[str, object],
+        *,
+        strict_dulwich_restore: bool = False,
+        allow_sqlite_fallback: bool = True,
     ) -> dict[str, SnapshotFile]: ...
 
     def set_current_snapshot_id(self, snapshot_id: int | None) -> None: ...
@@ -70,6 +76,8 @@ class HistoryBackend(Protocol):
     def snapshot_sizes_by_id(self) -> dict[int, int]: ...
 
     def delete_checkpoints_and_orphan_snapshots(self, checkpoint_ids: list[int]) -> list[int]: ...
+
+    def gc(self, *, dry_run: bool = False) -> dict[str, int]: ...
 
 
 class SnapshotStoreHistoryBackend:
@@ -91,6 +99,7 @@ class SnapshotStoreHistoryBackend:
             include_ext=self._config.snapshot_include_ext,
             code_exclude_globs=self._config.snapshot_exclude_globs,
             exclude_markdown_globs=self._config.schema_exclude_markdown_globs,
+            max_file_size_bytes=self._config.snapshot_max_file_size_bytes,
         )
 
     def list_checkpoints(self, *, limit: int | None = None) -> list[dict[str, object]]:
@@ -153,8 +162,24 @@ class SnapshotStoreHistoryBackend:
         return self._store.load_snapshot(snapshot_id)
 
     def load_snapshot_for_checkpoint(
-        self, checkpoint: dict[str, object]
+        self,
+        checkpoint: dict[str, object],
+        *,
+        strict_dulwich_restore: bool = False,
+        allow_sqlite_fallback: bool = True,
     ) -> dict[str, SnapshotFile]:
+        if strict_dulwich_restore:
+            checkpoint_id = checkpoint.get("checkpoint_id")
+            raise RuntimeError(
+                "strict dulwich restore requires history.backend=dulwich and git_commit_oid-backed "
+                f"checkpoints; current backend cannot serve checkpoint {checkpoint_id}"
+            )
+        if not allow_sqlite_fallback:
+            checkpoint_id = checkpoint.get("checkpoint_id")
+            raise RuntimeError(
+                "sqlite fallback is disabled, but current backend is snapshot-only; "
+                f"cannot restore checkpoint {checkpoint_id}"
+            )
         return self._store.load_snapshot(self._require_snapshot_id(checkpoint))
 
     def set_current_snapshot_id(self, snapshot_id: int | None) -> None:
@@ -165,6 +190,15 @@ class SnapshotStoreHistoryBackend:
 
     def delete_checkpoints_and_orphan_snapshots(self, checkpoint_ids: list[int]) -> list[int]:
         return self._store.delete_checkpoints_and_orphan_snapshots(checkpoint_ids)
+
+    def gc(self, *, dry_run: bool = False) -> dict[str, int]:
+        _ = dry_run
+        return {
+            "candidate_count": 0,
+            "deleted_count": 0,
+            "reclaimed_bytes": 0,
+            "reachable_count": 0,
+        }
 
     @staticmethod
     def _require_snapshot_id(checkpoint: dict[str, object]) -> int:
@@ -185,6 +219,7 @@ class DulwichHistoryBackend(SnapshotStoreHistoryBackend):
     def __init__(self, config: LintConfig) -> None:
         super().__init__(config)
         self._repo_dir = (config.project_root / config.history.git_dir).resolve()
+        self._repo_recovery_attempted = False
 
     def create_git_checkpoint(
         self,
@@ -194,8 +229,6 @@ class DulwichHistoryBackend(SnapshotStoreHistoryBackend):
         actor: str | None = None,
         message: str | None = None,
     ) -> str | None:
-        if source != "history_checkpoint":
-            return None
         try:
             from dulwich.objects import Commit
         except Exception as exc:
@@ -219,23 +252,49 @@ class DulwichHistoryBackend(SnapshotStoreHistoryBackend):
         commit.author_timezone = 0
         commit.commit_timezone = 0
         commit.encoding = b"UTF-8"
-        commit.message = ((message or "").strip() or "history checkpoint").encode("utf-8")
+        commit.message = ((message or "").strip() or f"{source} checkpoint").encode("utf-8")
         commit.parents = [parent_oid] if parent_oid is not None else []
         repo.object_store.add_object(commit)
         repo.refs[ref_name] = commit.id
         return commit.id.decode("ascii")
 
     def load_snapshot_for_checkpoint(
-        self, checkpoint: dict[str, object]
+        self,
+        checkpoint: dict[str, object],
+        *,
+        strict_dulwich_restore: bool = False,
+        allow_sqlite_fallback: bool = True,
     ) -> dict[str, SnapshotFile]:
         git_commit_oid_raw = checkpoint.get("git_commit_oid")
         git_commit_oid = str(git_commit_oid_raw).strip() if git_commit_oid_raw is not None else ""
         if not git_commit_oid:
-            return super().load_snapshot_for_checkpoint(checkpoint)
+            if strict_dulwich_restore:
+                checkpoint_id = checkpoint.get("checkpoint_id")
+                raise RuntimeError(
+                    "strict dulwich restore blocked: missing git_commit_oid for checkpoint "
+                    f"{checkpoint_id}. Create a new checkpoint via history/session commit first."
+                )
+            if not allow_sqlite_fallback:
+                checkpoint_id = checkpoint.get("checkpoint_id")
+                raise RuntimeError(
+                    "sqlite fallback is disabled and git_commit_oid is missing for checkpoint "
+                    f"{checkpoint_id}"
+                )
+            return super().load_snapshot_for_checkpoint(
+                checkpoint,
+                strict_dulwich_restore=False,
+                allow_sqlite_fallback=allow_sqlite_fallback,
+            )
         try:
             repo = self._open_or_init_repo()
             return self._read_snapshot_from_commit(repo, git_commit_oid)
         except Exception as exc:
+            if not allow_sqlite_fallback:
+                checkpoint_id = checkpoint.get("checkpoint_id")
+                raise RuntimeError(
+                    "restore failed while reading dulwich commit "
+                    f"{git_commit_oid} for checkpoint {checkpoint_id}: {exc}"
+                ) from exc
             checkpoint_id = checkpoint.get("checkpoint_id")
             self.append_history_event(
                 "restore_git_fallback",
@@ -247,14 +306,63 @@ class DulwichHistoryBackend(SnapshotStoreHistoryBackend):
                     "reason": str(exc),
                 },
             )
-            return super().load_snapshot_for_checkpoint(checkpoint)
+            return super().load_snapshot_for_checkpoint(
+                checkpoint,
+                strict_dulwich_restore=False,
+                allow_sqlite_fallback=allow_sqlite_fallback,
+            )
 
     def _open_or_init_repo(self) -> Any:
         from dulwich.repo import Repo
 
+        try:
+            if self._repo_dir.exists():
+                return Repo(str(self._repo_dir))
+            return Repo.init_bare(str(self._repo_dir), mkdir=True)
+        except Exception as exc:
+            if self._repo_recovery_attempted:
+                raise RuntimeError(
+                    "history git repository is unavailable after a recovery attempt"
+                ) from exc
+            self._repo_recovery_attempted = True
+            return self._recover_repo_after_corruption(exc)
+
+    def _recover_repo_after_corruption(self, original_error: Exception) -> Any:
+        from dulwich.repo import Repo
+
+        now = datetime.now(timezone.utc)
+        backup_path = self._repo_dir.with_name(
+            f"{self._repo_dir.name}.corrupted.{now.strftime('%Y%m%d%H%M%S')}"
+        )
+        backup_path_text = ""
+        backup_error = ""
         if self._repo_dir.exists():
-            return Repo(str(self._repo_dir))
-        return Repo.init_bare(str(self._repo_dir), mkdir=True)
+            try:
+                shutil.move(self._repo_dir.as_posix(), backup_path.as_posix())
+                backup_path_text = backup_path.as_posix()
+            except Exception as exc:
+                backup_error = str(exc)
+        if self._repo_dir.exists():
+            raise RuntimeError(
+                "history git repository appears corrupted, and automatic backup/reset failed"
+                f": {self._repo_dir.as_posix()}; backup_error={backup_error or 'unknown'}"
+            ) from original_error
+        try:
+            repo = Repo.init_bare(str(self._repo_dir), mkdir=True)
+        except Exception as exc:
+            raise RuntimeError(
+                "history git repository appears corrupted, and automatic reinitialization failed"
+            ) from exc
+        self.append_history_event(
+            "git_repo_corrupted_reinitialized",
+            {
+                "repo_dir": self._repo_dir.as_posix(),
+                "backup_path": backup_path_text,
+                "backup_error": backup_error,
+                "reason": str(original_error),
+            },
+        )
+        return repo
 
     def _write_tree(self, repo: Any, files: list[SnapshotFile]) -> Any:
         root: dict[str, object] = {}
@@ -339,6 +447,124 @@ class DulwichHistoryBackend(SnapshotStoreHistoryBackend):
                 content=content_text,
             )
 
+    def gc(self, *, dry_run: bool = False) -> dict[str, int]:
+        if not self._repo_dir.exists():
+            return super().gc(dry_run=dry_run)
+        repo = self._open_or_init_repo()
+        reachable = self._collect_reachable_object_oids(repo)
+        candidate_count = 0
+        deleted_count = 0
+        estimated_reclaimed_bytes = 0
+        for object_path, object_hex, object_size in self._iter_loose_object_files():
+            if object_hex in reachable:
+                continue
+            candidate_count += 1
+            estimated_reclaimed_bytes += object_size
+            if dry_run:
+                continue
+            try:
+                object_path.unlink()
+                deleted_count += 1
+            except FileNotFoundError:
+                continue
+        return {
+            "candidate_count": candidate_count,
+            "deleted_count": deleted_count if not dry_run else 0,
+            "reclaimed_bytes": estimated_reclaimed_bytes,
+            "reachable_count": len(reachable),
+        }
+
+    def _collect_reachable_object_oids(self, repo: Any) -> set[str]:
+        from dulwich.objects import Commit, Tag, Tree
+
+        reachable: set[str] = set()
+        stack: list[str] = []
+        for oid in self._store.list_referenced_git_commit_oids():
+            normalized = self._normalize_oid_hex(oid)
+            if normalized:
+                stack.append(normalized)
+        for value in repo.refs.as_dict().values():
+            normalized = self._normalize_oid_hex(value)
+            if normalized:
+                stack.append(normalized)
+        while stack:
+            oid_hex = stack.pop()
+            if oid_hex in reachable:
+                continue
+            reachable.add(oid_hex)
+            try:
+                obj = repo.object_store[oid_hex.encode("ascii")]
+            except Exception:
+                continue
+            if isinstance(obj, Commit):
+                tree_hex = self._normalize_oid_hex(obj.tree)
+                if tree_hex and tree_hex not in reachable:
+                    stack.append(tree_hex)
+                for parent in obj.parents:
+                    parent_hex = self._normalize_oid_hex(parent)
+                    if parent_hex and parent_hex not in reachable:
+                        stack.append(parent_hex)
+                continue
+            if isinstance(obj, Tree):
+                for entry in obj.items():
+                    child_hex = self._normalize_oid_hex(entry.sha)
+                    if child_hex and child_hex not in reachable:
+                        stack.append(child_hex)
+                continue
+            if isinstance(obj, Tag):
+                tagged = getattr(obj, "object", None)
+                if isinstance(tagged, tuple) and len(tagged) >= 2:
+                    target_hex = self._normalize_oid_hex(tagged[1])
+                    if target_hex and target_hex not in reachable:
+                        stack.append(target_hex)
+        return reachable
+
+    def _iter_loose_object_files(self) -> list[tuple[Path, str, int]]:
+        objects_dir = self._repo_dir / "objects"
+        if not objects_dir.exists():
+            return []
+        candidates: list[tuple[Path, str, int]] = []
+        for prefix_dir in objects_dir.iterdir():
+            prefix = prefix_dir.name
+            if (
+                not prefix_dir.is_dir()
+                or len(prefix) != 2
+                or any(ch not in "0123456789abcdefABCDEF" for ch in prefix)
+            ):
+                continue
+            for suffix_file in prefix_dir.iterdir():
+                suffix = suffix_file.name
+                if (
+                    not suffix_file.is_file()
+                    or len(suffix) != 38
+                    or any(ch not in "0123456789abcdefABCDEF" for ch in suffix)
+                ):
+                    continue
+                object_hex = f"{prefix}{suffix}".lower()
+                try:
+                    object_size = int(suffix_file.stat().st_size)
+                except FileNotFoundError:
+                    continue
+                candidates.append((suffix_file, object_hex, object_size))
+        return candidates
+
+    @staticmethod
+    def _normalize_oid_hex(value: object) -> str:
+        if isinstance(value, bytes):
+            if len(value) == 20:
+                return value.hex().lower()
+            try:
+                text = value.decode("ascii").strip()
+            except UnicodeDecodeError:
+                return ""
+            if len(text) == 40 and all(ch in "0123456789abcdefABCDEF" for ch in text):
+                return text.lower()
+            return ""
+        text = str(value).strip()
+        if len(text) == 40 and all(ch in "0123456789abcdefABCDEF" for ch in text):
+            return text.lower()
+        return ""
+
     @staticmethod
     def _sha256_hex(text: str) -> str:
         import hashlib
@@ -362,15 +588,20 @@ class HistoryService:
             self._backend = SnapshotStoreHistoryBackend(config)
         self._db_path = self._backend.db_path
         self._lock_path = (config.project_root / config.cache_dir / "history.lock").resolve()
+        self._restore_txn_path = (
+            config.project_root / config.cache_dir / "restore_transaction.v1.json"
+        ).resolve()
 
     def list_checkpoints(
         self, *, limit: int | None = None, include_stats: bool = True
     ) -> dict[str, Any]:
         checkpoints = self._backend.list_checkpoints(limit=limit)
+        pending_restore_txn = self._read_pending_restore_txn()
         payload: dict[str, Any] = {
             "snapshot_db_path": self._db_path.as_posix(),
             "current_baseline_snapshot_id": self._backend.latest_snapshot_id(),
             "checkpoints": checkpoints,
+            "pending_restore_txn": pending_restore_txn,
         }
         if include_stats:
             payload["stats"] = self._backend.history_stats()
@@ -436,6 +667,7 @@ class HistoryService:
         message: str | None = None,
     ) -> dict[str, Any]:
         with self._history_operation_lock("restore"):
+            self._recover_pending_restore_if_needed()
             checkpoint = self._backend.get_checkpoint(to_checkpoint_id)
             if checkpoint is None:
                 raise RuntimeError(f"checkpoint not found: {to_checkpoint_id}")
@@ -511,33 +743,71 @@ class HistoryService:
                     current_files,
                     set_as_baseline=False,
                 )
+                before_checkpoint_message = (
+                    message or ""
+                ).strip() or "restore before apply safety checkpoint"
+                before_git_commit_oid = self._backend.create_git_checkpoint(
+                    files=current_files,
+                    source="restore_before_apply",
+                    actor=actor,
+                    message=before_checkpoint_message,
+                )
                 before_checkpoint_id = self._backend.create_checkpoint(
                     snapshot_id=before_snapshot_id,
                     source="restore_before_apply",
                     baseline_snapshot_id=plan["current_baseline_snapshot_id"],
                     gate_status="unknown",
-                    message=message or "",
+                    git_commit_oid=before_git_commit_oid,
+                    message=before_checkpoint_message,
                     metadata={"actor": actor or ""},
                 )
 
-            self._apply_restore_plan(
-                project_root=self._config.project_root,
-                target_snapshot=target_snapshot,
-                to_delete=plan["to_delete"],
+            txn_payload = self._write_restore_transaction(
+                target_checkpoint_id=to_checkpoint_id,
+                target_snapshot_id=self._require_int(
+                    plan["target_snapshot_id"], field="snapshot_id"
+                ),
+                before_checkpoint_id=before_checkpoint_id,
+                before_snapshot_id=before_snapshot_id,
+                actor=actor,
+                message=message,
             )
-            self._backend.set_current_snapshot_id(plan["target_snapshot_id"])
-            self._backend.append_history_event(
-                "restore_applied",
-                {
-                    "target_checkpoint_id": to_checkpoint_id,
-                    "target_snapshot_id": plan["target_snapshot_id"],
-                    "before_snapshot_id": before_snapshot_id,
-                    "before_checkpoint_id": before_checkpoint_id,
-                    "force": bool(force),
-                    "actor": actor or "",
-                    "message": message or "",
-                },
-            )
+            applied_ok = False
+            try:
+                self._apply_restore_plan(
+                    project_root=self._config.project_root,
+                    target_snapshot=target_snapshot,
+                    to_delete=plan["to_delete"],
+                )
+                self._backend.set_current_snapshot_id(plan["target_snapshot_id"])
+                self._backend.append_history_event(
+                    "restore_applied",
+                    {
+                        "target_checkpoint_id": to_checkpoint_id,
+                        "target_snapshot_id": plan["target_snapshot_id"],
+                        "before_snapshot_id": before_snapshot_id,
+                        "before_checkpoint_id": before_checkpoint_id,
+                        "force": bool(force),
+                        "actor": actor or "",
+                        "message": message or "",
+                    },
+                )
+                applied_ok = True
+            except Exception as exc:
+                self._backend.append_history_event(
+                    "restore_apply_failed",
+                    {
+                        "target_checkpoint_id": to_checkpoint_id,
+                        "target_snapshot_id": plan["target_snapshot_id"],
+                        "before_snapshot_id": before_snapshot_id,
+                        "before_checkpoint_id": before_checkpoint_id,
+                        "reason": str(exc),
+                    },
+                )
+                raise
+            finally:
+                if applied_ok and self._restore_txn_path.exists():
+                    self._clear_restore_transaction(txn_payload)
             return {
                 "status": "applied",
                 "plan": plan,
@@ -587,11 +857,13 @@ class HistoryService:
             cutoff = now - timedelta(days=max(1, resolved_max_days))
             rows = self._backend.list_checkpoints()
             if not rows:
+                gc_stats = self._backend.gc(dry_run=False)
                 return {
                     "status": "ok",
                     "removed_checkpoint_ids": [],
                     "removed_snapshot_ids": [],
                     "kept_checkpoint_ids": [],
+                    "gc": gc_stats,
                 }
             latest_checkpoint_id = self._require_int(
                 rows[0]["checkpoint_id"], field="checkpoint_id"
@@ -638,24 +910,29 @@ class HistoryService:
                 else:
                     drop_ids.append(checkpoint_id)
             if not drop_ids:
+                gc_stats = self._backend.gc(dry_run=False)
                 return {
                     "status": "ok",
                     "removed_checkpoint_ids": [],
                     "removed_snapshot_ids": [],
                     "kept_checkpoint_ids": sorted(keep_ids, reverse=True),
+                    "gc": gc_stats,
                 }
             removed_snapshot_ids = self._backend.delete_checkpoints_and_orphan_snapshots(drop_ids)
+            gc_stats = self._backend.gc(dry_run=False)
             payload = {
                 "status": "ok",
                 "removed_checkpoint_ids": sorted(drop_ids, reverse=True),
                 "removed_snapshot_ids": sorted(removed_snapshot_ids),
                 "kept_checkpoint_ids": sorted(keep_ids, reverse=True),
+                "gc": gc_stats,
             }
             self._backend.append_history_event(
                 "prune_done",
                 {
                     "removed_checkpoint_count": len(drop_ids),
                     "removed_snapshot_count": len(removed_snapshot_ids),
+                    "gc": gc_stats,
                 },
             )
             return payload
@@ -664,20 +941,21 @@ class HistoryService:
     def _history_operation_lock(self, action: str):
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
         started = time.monotonic()
-        lock_token = f"{os.getpid()}:{uuid.uuid4().hex}"
         timeout_seconds = 2.0
         wait_interval_seconds = 0.05
+        lock_fd = os.open(
+            self._lock_path.as_posix(),
+            os.O_CREAT | os.O_RDWR,
+            0o600,
+        )
+        lock_id = uuid.uuid4().hex
         while True:
             try:
-                fd = os.open(
-                    self._lock_path.as_posix(),
-                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
-                    0o600,
-                )
-                with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    handle.write(lock_token)
+                self._acquire_file_lock(lock_fd)
+                os.ftruncate(lock_fd, 0)
+                os.write(lock_fd, f"{os.getpid()}:{lock_id}".encode())
                 break
-            except FileExistsError as exc:
+            except BlockingIOError as exc:
                 if time.monotonic() - started >= timeout_seconds:
                     raise RuntimeError(
                         f"history {action} is blocked: another history operation is in progress"
@@ -687,11 +965,46 @@ class HistoryService:
             yield
         finally:
             try:
-                lock_content = self._lock_path.read_text(encoding="utf-8")
-            except FileNotFoundError:
+                self._release_file_lock(lock_fd)
+            finally:
+                os.close(lock_fd)
+
+    @staticmethod
+    def _acquire_file_lock(lock_fd: int) -> None:
+        if os.name == "nt":
+            import msvcrt
+
+            if os.fstat(lock_fd).st_size == 0:
+                os.write(lock_fd, b"0")
+            os.lseek(lock_fd, 0, os.SEEK_SET)
+            try:
+                msvcrt.locking(lock_fd, msvcrt.LK_NBLCK, 1)
                 return
-            if lock_content == lock_token:
-                self._lock_path.unlink(missing_ok=True)
+            except OSError as exc:
+                raise BlockingIOError("history lock is busy") from exc
+        else:
+            import fcntl
+
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except BlockingIOError as exc:
+                raise BlockingIOError("history lock is busy") from exc
+
+    @staticmethod
+    def _release_file_lock(lock_fd: int) -> None:
+        if os.name == "nt":
+            import msvcrt
+
+            os.lseek(lock_fd, 0, os.SEEK_SET)
+            try:
+                msvcrt.locking(lock_fd, msvcrt.LK_UNLCK, 1)
+            except OSError:
+                return
+            return
+        import fcntl
+
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
 
     def _collect_current_files(self) -> list[SnapshotFile]:
         return self._backend.collect_current_files()
@@ -714,7 +1027,15 @@ class HistoryService:
         )
         workspace_map = {item.path: item for item in current_workspace_files}
         dirty_files = sorted(set(self._compute_changed_paths(baseline_snapshot, workspace_map)))
-        target_snapshot = self._backend.load_snapshot_for_checkpoint(checkpoint)
+        target_snapshot = self._backend.load_snapshot_for_checkpoint(
+            checkpoint,
+            strict_dulwich_restore=bool(
+                getattr(self._config.history.safety, "strict_dulwich_restore", False)
+            ),
+            allow_sqlite_fallback=bool(
+                getattr(self._config.history.safety, "allow_sqlite_fallback", True)
+            ),
+        )
         to_write: list[dict[str, Any]] = []
         to_delete: list[str] = []
         for path, target in target_snapshot.items():
@@ -794,6 +1115,107 @@ class HistoryService:
                 abs_path.unlink()
         for abs_path, content in safe_write_paths:
             self._write_text_atomic(abs_path, content)
+
+    def _write_restore_transaction(
+        self,
+        *,
+        target_checkpoint_id: int,
+        target_snapshot_id: int,
+        before_checkpoint_id: int | None,
+        before_snapshot_id: int | None,
+        actor: str | None,
+        message: str | None,
+    ) -> dict[str, object]:
+        self._restore_txn_path.parent.mkdir(parents=True, exist_ok=True)
+        payload: dict[str, object] = {
+            "version": 1,
+            "state": "applying",
+            "target_checkpoint_id": target_checkpoint_id,
+            "target_snapshot_id": target_snapshot_id,
+            "before_checkpoint_id": before_checkpoint_id,
+            "before_snapshot_id": before_snapshot_id,
+            "actor": actor or "",
+            "message": message or "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        tmp_path = self._restore_txn_path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp_path.as_posix(), self._restore_txn_path.as_posix())
+        return payload
+
+    def _clear_restore_transaction(self, txn_payload: dict[str, object]) -> None:
+        if not self._restore_txn_path.exists():
+            return
+        self._restore_txn_path.unlink()
+        self._backend.append_history_event(
+            "restore_txn_cleared",
+            {
+                "target_checkpoint_id": txn_payload.get("target_checkpoint_id"),
+                "target_snapshot_id": txn_payload.get("target_snapshot_id"),
+            },
+        )
+
+    def _recover_pending_restore_if_needed(self) -> None:
+        payload = self._read_pending_restore_txn()
+        if payload is None:
+            return
+        if not isinstance(payload, dict):
+            raise RuntimeError("restore transaction payload is invalid")
+        if str(payload.get("state", "")).strip() != "applying":
+            self._restore_txn_path.unlink()
+            return
+        before_checkpoint_id_raw = payload.get("before_checkpoint_id")
+        if before_checkpoint_id_raw is None:
+            raise RuntimeError(
+                "detected incomplete restore transaction, but missing before_checkpoint_id for recovery"
+            )
+        before_checkpoint_id = self._require_int(
+            before_checkpoint_id_raw, field="before_checkpoint_id"
+        )
+        checkpoint = self._backend.get_checkpoint(before_checkpoint_id)
+        if checkpoint is None:
+            raise RuntimeError(
+                "detected incomplete restore transaction, but recovery checkpoint is unavailable"
+            )
+        recovery_snapshot = self._backend.load_snapshot_for_checkpoint(
+            checkpoint,
+            strict_dulwich_restore=False,
+            allow_sqlite_fallback=True,
+        )
+        current_files = self._collect_current_files()
+        workspace_map = {item.path: item for item in current_files}
+        to_delete = sorted(path for path in workspace_map.keys() if path not in recovery_snapshot)
+        self._apply_restore_plan(
+            project_root=self._config.project_root,
+            target_snapshot=recovery_snapshot,
+            to_delete=to_delete,
+        )
+        before_snapshot_id_raw = payload.get("before_snapshot_id")
+        if before_snapshot_id_raw is not None:
+            self._backend.set_current_snapshot_id(
+                self._require_int(before_snapshot_id_raw, field="before_snapshot_id")
+            )
+        self._backend.append_history_event(
+            "restore_recovered",
+            {
+                "target_checkpoint_id": payload.get("target_checkpoint_id"),
+                "target_snapshot_id": payload.get("target_snapshot_id"),
+                "before_checkpoint_id": before_checkpoint_id,
+                "before_snapshot_id": before_snapshot_id_raw,
+            },
+        )
+        self._clear_restore_transaction(payload)
+
+    def _read_pending_restore_txn(self) -> dict[str, object] | None:
+        if not self._restore_txn_path.exists():
+            return None
+        try:
+            payload = json.loads(self._restore_txn_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise RuntimeError("restore transaction payload cannot be parsed") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError("restore transaction payload is invalid")
+        return payload
 
     @staticmethod
     def _resolve_workspace_path_or_raise(*, project_root: Path, rel_path: str) -> Path:

@@ -18,8 +18,7 @@ from .commands.option_resolver import (
 from .commands.session_args import add_session_parser
 from .commands.verify_args import add_verify_parser
 from .commands.watch_args import add_watch_parser
-from .output import render_iwp_diff_text, safe_len, write_json
-from .reconcile import run_session_reconcile
+from .output import render_iwp_diff_text, render_iwp_reconcile_text, safe_len, write_json
 from .services.build import run_build
 from .services.verify import run_verify
 from .services.watch import run_watch
@@ -32,10 +31,12 @@ try:
         history_prune,
         history_restore,
         normalize_annotations,
+        resolve_session_id,
         session_audit,
         session_commit,
         session_current,
         session_diff,
+        session_reconcile,
         session_start,
         verify_compiled,
     )
@@ -48,10 +49,12 @@ except ImportError:
         history_prune,
         history_restore,
         normalize_annotations,
+        resolve_session_id,
         session_audit,
         session_commit,
         session_current,
         session_diff,
+        session_reconcile,
         session_start,
         verify_compiled,
     )
@@ -216,6 +219,20 @@ def _run_session(config: Any, options: SessionOptions) -> int:
             f"changed_code={safe_len(payload.get('changed_code_files'))} "
             f"impacted_nodes={safe_len(payload.get('impacted_nodes'))}"
         )
+    if action == "reconcile":
+        if options.output_format in {"text", "both"}:
+            max_hint_items = int(getattr(config.session, "max_hint_items", 20))
+            print(render_iwp_reconcile_text(payload, max_hint_items=max_hint_items))
+        intent_diff = payload.get("intent_diff")
+        intent_diff_dict = intent_diff if isinstance(intent_diff, dict) else {}
+        summary = payload.get("summary")
+        summary_dict = summary if isinstance(summary, dict) else {}
+        print(
+            "[iwp-build] session reconcile "
+            f"can_commit={bool(payload.get('can_commit', False))} "
+            f"changed={safe_len(intent_diff_dict.get('changed_files'))} "
+            f"impacted_nodes={summary_dict.get('impacted_nodes_count', 0)}"
+        )
     if action == "current":
         has_open = bool(payload.get("has_open_session", False))
         print(f"[iwp-build] session current has_open_session={has_open}")
@@ -318,12 +335,15 @@ def _handle_session_current(ctx: SessionActionContext) -> SessionActionResult:
 def _handle_session_diff(ctx: SessionActionContext) -> SessionActionResult:
     config = ctx.config
     options = ctx.options
-    resolved_session_id = _resolve_session_id(
+    resolved_session_id, auto_started = resolve_session_id(
         config=config,
         session_id=options.session_id,
         action="diff",
         auto_start_session=options.auto_start_session,
+        auto_start_origin="iwp-build session diff auto-start",
     )
+    if auto_started:
+        print(f"[iwp-build] auto-started session id={resolved_session_id} for action=diff")
     payload = session_diff(
         config=config,
         session_id=resolved_session_id,
@@ -348,7 +368,7 @@ def _handle_session_diff(ctx: SessionActionContext) -> SessionActionResult:
 def _handle_session_commit(ctx: SessionActionContext) -> SessionActionResult:
     config = ctx.config
     options = ctx.options
-    resolved_session_id = _resolve_session_id(
+    resolved_session_id, _ = resolve_session_id(
         config=config,
         session_id=options.session_id,
         action="commit",
@@ -388,13 +408,9 @@ def _handle_session_audit(ctx: SessionActionContext) -> SessionActionResult:
 def _handle_session_reconcile(ctx: SessionActionContext) -> SessionActionResult:
     config = ctx.config
     options = ctx.options
-    reconcile_json_path = options.json_path
-    if options.output_format in {"json", "both"} and not reconcile_json_path:
-        reconcile_json_path = "out/session-reconcile.json"
-    exit_code, payload = run_session_reconcile(
+    exit_code, payload = session_reconcile(
         config=config,
         session_id=options.session_id,
-        json_path=reconcile_json_path,
         normalize_links=options.normalize_links,
         code_diff_level=options.code_diff_level,
         code_diff_context_lines=options.code_diff_context_lines,
@@ -405,7 +421,6 @@ def _handle_session_reconcile(ctx: SessionActionContext) -> SessionActionResult:
         node_kind_prefixes=options.node_kind_prefixes,
         critical_only=options.critical_only,
         markdown_excerpt_max_chars=options.markdown_excerpt_max_chars,
-        output_format=options.output_format,
         debug_raw=options.debug_raw,
         auto_start_session=options.auto_start_session,
         max_diagnostics=options.max_diagnostics,
@@ -415,11 +430,12 @@ def _handle_session_reconcile(ctx: SessionActionContext) -> SessionActionResult:
         warning_top_n=options.warning_top_n,
         auto_build_sidecar=options.auto_build_sidecar,
     )
-    print(
-        "[iwp-build] session "
-        f"action={options.action} id={payload.get('session_id', options.session_id)} status={payload.get('status', 'n/a')}"
-    )
-    return SessionActionResult(payload=payload, exit_code=exit_code, skip_post_processing=True)
+    auto_started = payload.get("auto_started_session")
+    if isinstance(auto_started, dict):
+        started_id = str(auto_started.get("session_id", "")).strip()
+        if started_id:
+            print(f"[iwp-build] auto-started session id={started_id} for action=reconcile")
+    return SessionActionResult(payload=payload, exit_code=exit_code)
 
 
 def _handle_session_normalize_links(ctx: SessionActionContext) -> SessionActionResult:
@@ -475,44 +491,6 @@ def _handle_history_checkpoint(ctx: HistoryActionContext) -> HistoryActionResult
         message=options.message,
     )
     return HistoryActionResult(payload=payload)
-
-
-def _resolve_session_id(
-    *,
-    config,
-    session_id: str | None,
-    action: str,
-    auto_start_session: bool = False,
-) -> str:
-    if isinstance(session_id, str) and session_id.strip():
-        return session_id.strip()
-    current = session_current(config=config)
-    if bool(current.get("has_open_session", False)):
-        session = current.get("session")
-        if isinstance(session, dict):
-            resolved = session.get("session_id")
-            if isinstance(resolved, str) and resolved.strip():
-                return resolved
-    if auto_start_session and action in {"diff", "reconcile"}:
-        started = session_start(
-            config=config, metadata={"origin": f"iwp-build session {action} auto-start"}
-        )
-        resolved = str(started.get("session_id", "")).strip() if isinstance(started, dict) else ""
-        if resolved:
-            print(f"[iwp-build] auto-started session id={resolved} for action={action}")
-            return resolved
-    commands = [
-        "iwp-build session start --config <cfg>",
-        "iwp-build session current --config <cfg>",
-        "iwp-build session diff --config <cfg> --preset agent-default",
-        "iwp-build session reconcile --config <cfg> --preset agent-default",
-    ]
-    command_lines = "\n".join(f"- {item}" for item in commands)
-    raise RuntimeError(
-        f"--session-id is required for session {action} when no open session exists\n"
-        "next steps:\n"
-        f"{command_lines}"
-    )
 
 
 if __name__ == "__main__":

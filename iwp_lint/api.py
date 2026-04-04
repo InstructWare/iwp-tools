@@ -14,6 +14,15 @@ from .core.node_catalog import (
     verify_code_sidecar_freshness_context,
     verify_compiled_context,
 )
+from .core.reconcile_runtime import (
+    ReconcileRequest,
+)
+from .core.reconcile_runtime import (
+    resolve_session_id as resolve_session_id_core,
+)
+from .core.reconcile_runtime import (
+    run_session_reconcile as run_session_reconcile_core,
+)
 from .core.session_service import SessionService
 from .parsers.md_parser import parse_markdown_nodes
 from .vcs.diff_resolver import impacted_nodes, load_diff
@@ -31,6 +40,7 @@ def snapshot_action(config: LintConfig, action: str) -> dict[str, Any]:
             include_ext=config.snapshot_include_ext,
             code_exclude_globs=config.snapshot_exclude_globs,
             exclude_markdown_globs=config.schema_exclude_markdown_globs,
+            max_file_size_bytes=config.snapshot_max_file_size_bytes,
         )
         snapshot_id = store.create_snapshot(files)
         return {
@@ -234,6 +244,71 @@ def session_audit(config: LintConfig, *, session_id: str) -> dict[str, Any]:
 def session_current(config: LintConfig) -> dict[str, Any]:
     service = SessionService(config)
     return service.current()
+
+
+def resolve_session_id(
+    config: LintConfig,
+    *,
+    session_id: str | None,
+    action: str,
+    auto_start_session: bool = False,
+    auto_start_origin: str | None = None,
+) -> tuple[str, bool]:
+    return resolve_session_id_core(
+        config=config,
+        session_id=session_id,
+        action=action,
+        auto_start_session=auto_start_session,
+        auto_start_origin=auto_start_origin,
+    )
+
+
+def session_reconcile(
+    config: LintConfig,
+    *,
+    session_id: str | None,
+    normalize_links: bool = False,
+    code_diff_level: str | None = None,
+    code_diff_context_lines: int | None = None,
+    code_diff_max_chars: int | None = None,
+    node_severity: str | None = None,
+    node_file_types: list[str] | None = None,
+    node_anchor_levels: list[str] | None = None,
+    node_kind_prefixes: list[str] | None = None,
+    critical_only: bool = False,
+    markdown_excerpt_max_chars: int | None = None,
+    debug_raw: bool = False,
+    auto_start_session: bool = False,
+    max_diagnostics: int | None = None,
+    min_severity: str = "warning",
+    quiet_warnings: bool = False,
+    suggest_fixes: bool = False,
+    warning_top_n: int | None = None,
+    auto_build_sidecar: bool = False,
+) -> tuple[int, dict[str, object]]:
+    request = ReconcileRequest(
+        config=config,
+        session_id=session_id,
+        normalize_links=normalize_links,
+        code_diff_level=code_diff_level,
+        code_diff_context_lines=code_diff_context_lines,
+        code_diff_max_chars=code_diff_max_chars,
+        node_severity=node_severity,
+        node_file_types=node_file_types,
+        node_anchor_levels=node_anchor_levels,
+        node_kind_prefixes=node_kind_prefixes,
+        critical_only=critical_only,
+        markdown_excerpt_max_chars=markdown_excerpt_max_chars,
+        debug_raw=debug_raw,
+        auto_start_session=auto_start_session,
+        max_diagnostics=max_diagnostics,
+        min_severity=min_severity,
+        quiet_warnings=quiet_warnings,
+        suggest_fixes=suggest_fixes,
+        warning_top_n=warning_top_n,
+        auto_build_sidecar=auto_build_sidecar,
+    )
+    return run_session_reconcile_core(request)
 
 
 def history_list(

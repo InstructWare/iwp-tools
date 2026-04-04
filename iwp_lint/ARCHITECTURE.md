@@ -107,7 +107,7 @@ flowchart LR
 - `path`：项目相对路径
 - `kind`：`markdown` 或 `code`
 - `mtime_ns` / `size` / `digest`：变更识别指纹
-- `content`：文本快照（markdown/code 都缓存，用于行级 diff 与可选 hunk）
+- `content`：SQLite 文本快照（兼容/回退路径）；主恢复内容源为 Dulwich commit tree
 
 ### 3.5 CodeDiffOptions 与代码差异明细（`vcs/snapshot_diff.py`）
 
@@ -126,7 +126,7 @@ flowchart LR
 ### 3.6 Checkpoint / Baseline 状态（`vcs/snapshot_store.py`）
 
 - `baseline_state.current_snapshot_id`：当前 baseline 指针（恢复后会切换）
-- `checkpoints`：可回滚检查点元信息（`source/session_id/baseline_snapshot_id/gate_status`）
+- `checkpoints`：可回滚检查点元信息（`source/session_id/baseline_snapshot_id/gate_status/git_commit_oid`）
 - `history_events`：restore/prune 事件链（`restore_dry_run` / `restore_applied` / `restore_blocked` / `prune_done`）
 
 ## 4. 执行路径与运行能力
@@ -205,7 +205,7 @@ flowchart TD
   - `impacted_nodes`
   - `link_targets_suggested`
   - `link_density_signals`
-- `session_commit`：执行 gate（可配置）并原子推进 baseline
+- `session_commit`：执行 gate（可配置）并原子推进 baseline，同时写入 Dulwich checkpoint 并记录 `git_commit_oid`
 - `session_gate`：执行 compiled + lint gate，返回 `gate_status` 与阻断原因
 - `session_audit`：读取事件链（`session_events`）
 
@@ -215,15 +215,24 @@ flowchart TD
 
 ## 4.6 `history` 模式（API 内部能力）
 
-`history` 是非 Git 的历史回滚能力，供 `iwp-build history *` 消费：
+`history` 是文件级历史回滚能力（`SQLite + Dulwich Git objects`），供 `iwp-build history *` 消费：
 
+- `history_checkpoint`：创建开发态 checkpoint（不跑 gate）
 - `history_list`：列出 checkpoint 与当前 baseline
 - `history_restore`：
   - 支持 `dry_run` 预览影响清单
   - 默认脏工作区阻断，`force` 才允许覆盖
   - 可选自动创建 `restore_before_apply` 安全点
+  - 默认按 `git_commit_oid` 读取 Dulwich 内容；可通过 `history.safety.strict_dulwich_restore` 与 `allow_sqlite_fallback` 调整恢复策略
   - 恢复后返回 `next_required_actions`（`verify` / `session reconcile`）
 - `history_prune`：按保留策略清理历史 checkpoint 与孤儿 snapshot
+  - prune 后触发 `gc v1`（仅清理不可达 loose objects，保守模式）
+
+健壮性补充：
+
+- 并发互斥使用 OS 文件锁（Windows `msvcrt.locking` / Unix-like `fcntl.flock`）
+- snapshot 采集在读文件前执行大小阈值校验（`tracking.snapshot.max_file_size_kb`）
+- Dulwich 仓库损坏时支持一次性自动备份并重建，随后通过事件审计记录
 
 ## 5. Node ID 稳定策略（重点）
 
@@ -331,11 +340,14 @@ flowchart LR
 - `build_code_sidecar(config)`
 - `session_start(config, ...)`
 - `session_current(config)`
+- `resolve_session_id(config, ..., session_id=None, action, auto_start_session=False)`
 - `session_diff(config, ..., code_diff_level=None, code_diff_context_lines=None, code_diff_max_chars=None)`
+- `session_reconcile(config, ..., session_id=None, normalize_links=False, auto_build_sidecar=False)`
 - `session_commit(config, ..., enforce_gate=True, message=None)`
 - `session_gate(config, ..., session_id)`
 - `session_audit(config, ..., session_id)`
 - `history_list(config, ..., limit=None, include_stats=True)`
+- `history_checkpoint(config, ..., actor=None, message=None)`
 - `history_restore(config, ..., to_checkpoint_id, dry_run=False, force=False)`
 - `history_prune(config, ..., max_snapshots=None, max_days=None, max_bytes=None)`
 

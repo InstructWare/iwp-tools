@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
-from ..output import build_next_actions
 from .hints import build_blocking_pairs_topn, build_diff_excerpt, build_structured_hints
 from .next_actions import (
     build_next_command_examples,
@@ -10,11 +7,12 @@ from .next_actions import (
     build_sidecar_next_actions,
 )
 from .path_hints import build_code_path_hints, build_suggested_code_paths
+from .utils import build_next_actions
 
 
 def build_reconcile_guidance(
     *,
-    config: Any,
+    config: object,
     diff_payload: dict[str, object],
     gate_payload: dict[str, object],
     diagnostics_filtered: list[object],

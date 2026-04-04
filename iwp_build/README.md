@@ -109,7 +109,9 @@ uv run iwp-build history prune --config .iwp-lint.yaml --max-snapshots 200 --max
 - `snapshot_action(...)`
 - `session_start(...)`
 - `session_current(...)`
+- `resolve_session_id(...)`
 - `session_diff(...)`
+- `session_reconcile(...)`
 - `session_commit(...)`
 - `session_audit(...)`
 - `history_checkpoint(...)`
@@ -118,6 +120,7 @@ uv run iwp-build history prune --config .iwp-lint.yaml --max-snapshots 200 --max
 - `history_prune(...)`
 
 This design keeps one source of truth for lint and snapshot semantics.
+`iwp-build` CLI keeps a thin role: parameter mapping + text/json rendering, while session/history orchestration stays in `iwp_lint` API.
 
 
 ## Suggested CI Usage
@@ -140,11 +143,17 @@ Output notes:
 - `build` prints baseline state as diff context (`exists`, `id`) and never advances baseline
 - `build` success/failure both keep baseline unchanged; use `session commit` for normal baseline advancement
 - `history checkpoint` creates a file-level savepoint and advances baseline pointer without running gate checks
+- `session commit` / `history checkpoint` / `restore_before_apply` checkpoints persist `git_commit_oid` metadata
 - `history restore` switches baseline pointer to a historical checkpoint and returns required follow-up actions
 - `history restore` default safety blocks dirty workspace; use `--force` to override
 - `history restore` also blocks when an open session exists; use `--force` only when you accept session baseline drift risk
+- `history restore` supports strict Dulwich mode via `.iwp-lint.yaml`:
+  - `history.safety.strict_dulwich_restore: true` requires `git_commit_oid`
+  - `history.safety.allow_sqlite_fallback: false` disables SQLite content fallback
 - `history restore --dry-run` previews write/delete impact without applying filesystem changes
 - `history prune` applies retention policy and keeps protected checkpoints (latest and recent restore safety point)
+  - prune payload now includes `gc` stats for conservative loose-object cleanup
+- snapshot collection enforces `tracking.snapshot.max_file_size_kb` before file content read
 - `session start` auto-generates a unique `session_id` by default; manual custom id is intentionally disabled in current phase
 - only one active session is allowed per workspace (`open|dirty|verified|blocked`)
 - `session start --if-missing` is idempotent for agent bootstrap:

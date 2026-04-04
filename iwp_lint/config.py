@@ -19,6 +19,7 @@ DEFAULT_TRACKING_EXCLUDE_GLOBS = [
     "**/.pytest_cache/**",
 ]
 DEFAULT_PROTOCOL_INCLUDE_EXT = [".vue", ".py", ".ts", ".tsx", ".js", ".jsx"]
+DEFAULT_TRACKING_MAX_FILE_SIZE_KB = 5120
 DEFAULT_SNAPSHOT_INCLUDE_EXT = [
     ".vue",
     ".py",
@@ -103,6 +104,8 @@ class HistoryRetentionConfig:
 class HistorySafetyConfig:
     block_restore_on_dirty: bool = True
     auto_checkpoint_before_restore: bool = True
+    strict_dulwich_restore: bool = False
+    allow_sqlite_fallback: bool = True
 
 
 @dataclass
@@ -143,6 +146,7 @@ class AuthoringConfig:
 class TrackingScopeConfig:
     include_ext: list[str] = field(default_factory=list)
     exclude_globs: list[str] = field(default_factory=list)
+    max_file_size_kb: int = DEFAULT_TRACKING_MAX_FILE_SIZE_KB
 
 
 @dataclass
@@ -276,6 +280,11 @@ class LintConfig:
     @property
     def snapshot_exclude_globs(self) -> list[str]:
         return list(self.tracking.snapshot.exclude_globs)
+
+    @property
+    def snapshot_max_file_size_bytes(self) -> int:
+        max_size_kb = int(self.tracking.snapshot.max_file_size_kb)
+        return max(1, max_size_kb) * 1024
 
     @property
     def include_ext(self) -> list[str]:
@@ -445,6 +454,10 @@ def load_config(config_file: str | None, cwd: Path | None = None) -> LintConfig:
                 auto_checkpoint_before_restore=bool(
                     history_safety_raw.get("auto_checkpoint_before_restore", True)
                 ),
+                strict_dulwich_restore=bool(
+                    history_safety_raw.get("strict_dulwich_restore", False)
+                ),
+                allow_sqlite_fallback=bool(history_safety_raw.get("allow_sqlite_fallback", True)),
             ),
         ),
         workflow=WorkflowConfig(
@@ -479,6 +492,14 @@ def _load_tracking(raw_tracking: Any) -> TrackingConfig:
     snapshot_include_ext = _normalize_include_ext(snapshot_raw.get("include_ext"))
     protocol_exclude_globs = _normalize_globs(protocol_raw.get("exclude_globs"))
     snapshot_exclude_globs = _normalize_globs(snapshot_raw.get("exclude_globs"))
+    protocol_max_file_size_kb = _load_tracking_max_file_size_kb(
+        protocol_raw.get("max_file_size_kb"),
+        field_name="tracking.protocol.max_file_size_kb",
+    )
+    snapshot_max_file_size_kb = _load_tracking_max_file_size_kb(
+        snapshot_raw.get("max_file_size_kb"),
+        field_name="tracking.snapshot.max_file_size_kb",
+    )
     if not protocol_include_ext:
         raise RuntimeError("`tracking.protocol.include_ext` must not be empty")
     if not snapshot_include_ext:
@@ -487,10 +508,12 @@ def _load_tracking(raw_tracking: Any) -> TrackingConfig:
         protocol=TrackingScopeConfig(
             include_ext=protocol_include_ext,
             exclude_globs=protocol_exclude_globs,
+            max_file_size_kb=protocol_max_file_size_kb,
         ),
         snapshot=TrackingScopeConfig(
             include_ext=snapshot_include_ext,
             exclude_globs=snapshot_exclude_globs,
+            max_file_size_kb=snapshot_max_file_size_kb,
         ),
     )
 
@@ -518,6 +541,18 @@ def _normalize_globs(raw: Any) -> list[str]:
         if value:
             normalized.append(value)
     return normalized
+
+
+def _load_tracking_max_file_size_kb(raw: Any, *, field_name: str) -> int:
+    if raw is None:
+        return DEFAULT_TRACKING_MAX_FILE_SIZE_KB
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"`{field_name}` must be a positive integer") from exc
+    if value <= 0:
+        raise RuntimeError(f"`{field_name}` must be a positive integer")
+    return value
 
 
 def _load_coverage_profiles(raw_profiles: Any) -> list[CoverageProfile]:

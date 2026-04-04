@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
-
-from ..output import build_diagnostics_top, safe_int
+from .utils import build_diagnostics_top, safe_int
 
 
 def build_reconcile_diagnostics_bundle(
     *,
-    config: Any,
+    config: object,
     gate_payload: dict[str, object],
     max_diagnostics: int | None,
     min_severity: str,
@@ -27,9 +25,9 @@ def build_reconcile_diagnostics_bundle(
     max_items = (
         max(1, int(max_diagnostics))
         if max_diagnostics is not None
-        else int(getattr(config.session, "max_diagnostics_items", 20))
+        else int(getattr(getattr(config, "session", object()), "max_diagnostics_items", 20))
     )
-    max_hint_items = int(getattr(config.session, "max_hint_items", 20))
+    max_hint_items = int(getattr(getattr(config, "session", object()), "max_hint_items", 20))
     diagnostics_top = build_diagnostics_top(
         diagnostics_filtered,
         max_items=max_items,
@@ -37,7 +35,10 @@ def build_reconcile_diagnostics_bundle(
     resolved_warning_top_n = (
         max(1, int(warning_top_n))
         if warning_top_n is not None
-        else max(1, int(getattr(config.session, "warning_summary_top_n", 2)))
+        else max(
+            1,
+            int(getattr(getattr(config, "session", object()), "warning_summary_top_n", 2)),
+        )
     )
     warning_items = [
         item

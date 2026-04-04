@@ -22,15 +22,15 @@ def build_sidecar_next_actions() -> list[dict[str, object]]:
 
 
 def build_next_command_examples(
-    *, next_actions: list[dict[str, object]], max_items: int
+    *,
+    next_actions: list[dict[str, object]],
+    max_items: int,
 ) -> list[str]:
     commands: list[str] = []
     seen: set[str] = set()
     for action in next_actions:
         raw_command = action.get("command", "")
-        if raw_command is None:
-            continue
-        command = str(raw_command).strip()
+        command = str(raw_command).strip() if raw_command is not None else ""
         if not command or command.lower() == "none" or command in seen:
             continue
         seen.add(command)
@@ -41,15 +41,15 @@ def build_next_command_examples(
 
 
 def build_recommended_next_chain(
-    *, next_actions: list[dict[str, object]], max_items: int
+    *,
+    next_actions: list[dict[str, object]],
+    max_items: int,
 ) -> list[str]:
     chain: list[str] = []
     seen: set[str] = set()
     for action in next_actions:
         raw_command = action.get("command", "")
-        if raw_command is None:
-            continue
-        command = str(raw_command).strip()
+        command = str(raw_command).strip() if raw_command is not None else ""
         if not command or command.lower() == "none" or command in seen:
             continue
         seen.add(command)

@@ -1,31 +1,31 @@
 from __future__ import annotations
 
-from ..output import safe_len
 from .guidance import build_blocking_reason_details
+from .utils import safe_len
 
 
 def assemble_reconcile_payload(
     *,
     request: object,
-    artifacts: dict[str, object],
+    resolved_session_id: str,
+    diff_payload: dict[str, object],
+    gate_payload: dict[str, object],
     diagnostics_bundle: dict[str, object],
     guidance: dict[str, object],
+    sidecar_freshness: dict[str, object],
+    sidecar_fresh: bool,
+    normalize_payload: dict[str, object] | None,
+    sidecar_auto_recovered: bool,
+    sidecar_refresh_payload: dict[str, object] | None,
 ) -> dict[str, object]:
     workflow_mode = _resolve_workflow_mode(request)
     mode_warnings = _build_mode_warnings(request)
-    gate_payload = _as_dict(artifacts.get("gate_payload"))
-    diff_payload = _as_dict(artifacts.get("diff_payload"))
-    sidecar_freshness = _as_dict(artifacts.get("sidecar_freshness"))
     gate_status = str(gate_payload.get("gate_status", "FAIL"))
-    compiled_payload = _as_dict(gate_payload.get("compiled"))
-    compiled_ok = bool(
-        gate_payload.get(
-            "compiled_ok",
-            compiled_payload.get("ok", False),
-        )
-    )
+    compiled_payload = gate_payload.get("compiled", {})
+    if not isinstance(compiled_payload, dict):
+        compiled_payload = {}
+    compiled_ok = bool(gate_payload.get("compiled_ok", compiled_payload.get("ok", False)))
     compiled_checked_at = gate_payload.get("compiled_checked_at")
-    sidecar_fresh = bool(artifacts.get("sidecar_fresh", False))
     can_commit = gate_status != "FAIL" and sidecar_fresh
     sidecar_stale_reasons = sidecar_freshness.get("stale_reasons", [])
     warning_items = diagnostics_bundle.get("warning_items", [])
@@ -38,7 +38,7 @@ def assemble_reconcile_payload(
             "schema_version": "iwp.session.reconcile.v1",
             "workflow_mode": workflow_mode,
         },
-        "session_id": artifacts.get("resolved_session_id"),
+        "session_id": resolved_session_id,
         "status": "pass" if can_commit else "blocked",
         "can_commit": can_commit,
         "compiled_ok": compiled_ok,
@@ -81,9 +81,9 @@ def assemble_reconcile_payload(
         if bool(getattr(request, "suggest_fixes", False))
         else guidance.get("code_path_hints", []),
         "diff_excerpt": guidance.get("diff_excerpt", []),
-        "normalize": artifacts.get("normalize_payload"),
-        "auto_recovered": bool(artifacts.get("sidecar_auto_recovered", False)),
-        "sidecar_refresh": artifacts.get("sidecar_refresh_payload"),
+        "normalize": normalize_payload,
+        "auto_recovered": sidecar_auto_recovered,
+        "sidecar_refresh": sidecar_refresh_payload,
         "mode_warnings": mode_warnings,
     }
 
@@ -119,10 +119,6 @@ def sanitize_reconcile_payload(payload: dict[str, object]) -> dict[str, object]:
         sanitized["recommended_next_command"] = None
         sanitized["recommended_next_chain"] = []
     return sanitized
-
-
-def _as_dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
 
 
 def _resolve_workflow_mode(request: object) -> str:

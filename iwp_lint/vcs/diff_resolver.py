@@ -44,6 +44,7 @@ class DiffProvider:
             include_ext=config.snapshot_include_ext,
             code_exclude_globs=config.snapshot_exclude_globs,
             exclude_markdown_globs=config.schema_exclude_markdown_globs,
+            max_file_size_bytes=config.snapshot_max_file_size_bytes,
         )
         current = {item.path: item for item in current_files}
         result = DiffResult()

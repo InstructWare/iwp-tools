@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 from iwp_lint.config import (
     DEFAULT_TRACKING_EXCLUDE_GLOBS,
@@ -61,6 +64,38 @@ def _tracking_ts() -> TrackingConfig:
             include_ext=[".ts"], exclude_globs=list(DEFAULT_TRACKING_EXCLUDE_GLOBS)
         ),
     )
+
+
+@contextmanager
+def _occupy_lock(lock_path: Path):
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_fd = os.open(lock_path.as_posix(), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            if os.fstat(lock_fd).st_size == 0:
+                os.write(lock_fd, b"0")
+            os.lseek(lock_fd, 0, os.SEEK_SET)
+            msvcrt.locking(lock_fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                os.lseek(lock_fd, 0, os.SEEK_SET)
+                msvcrt.locking(lock_fd, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
 
 
 class SessionServiceTests(unittest.TestCase):
@@ -141,6 +176,7 @@ class SessionServiceTests(unittest.TestCase):
             committed = service.commit(session_id_1, allow_stale_sidecar=True)
             self.assertEqual(committed["status"], "committed")
             self.assertIsNotNone(committed["baseline_id_after"])
+            self.assertTrue(str(committed.get("git_commit_oid", "")).strip())
 
             _write(md_file, "# Architecture\n\n## Layout Tree\n- Alpha\n- Beta\n")
             started_2 = service.start()
@@ -156,6 +192,52 @@ class SessionServiceTests(unittest.TestCase):
             audit = service.audit(session_id_2)
             self.assertEqual(audit["session"]["status"], "blocked")
             self.assertGreaterEqual(len(audit["events"]), 2)
+
+    def test_session_commit_blocks_when_history_lock_is_busy(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            md_file = iwp_root / "architecture.md"
+            link_file = root / "_ir/src/iwp_links.ts"
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(md_file, "# Architecture\n\n## Layout Tree\n- Alpha\n")
+            config = LintConfig(
+                project_root=root.resolve(),
+                iwp_root="InstructWare.iw",
+                schema_file="schema.json",
+                snapshot_db_file=".iwp/cache/snapshots.sqlite",
+                tracking=_tracking_ts(),
+                code_roots=["_ir/src"],
+                node_registry_file=".iwp/node_registry.v1.json",
+                node_catalog_file=".iwp/node_catalog.v1.json",
+                compiled_dir=".iwp/compiled",
+            )
+            nodes = parse_markdown_nodes(
+                iwp_root=iwp_root,
+                critical_patterns=[],
+                schema_path=schema_path,
+                node_registry_file=".iwp/node_registry.v1.json",
+            )
+            _write(
+                link_file,
+                "\n".join(f"// @iwp.link architecture.md::{item.node_id}" for item in nodes) + "\n",
+            )
+            service = SessionService(config)
+            started = service.start()
+            lock_path = (root / ".iwp/cache/history.lock").resolve()
+            with _occupy_lock(lock_path):
+                with (
+                    patch("iwp_lint.core.session_service.time.monotonic", side_effect=[0.0, 3.0]),
+                    patch("iwp_lint.core.session_service.time.sleep", return_value=None),
+                ):
+                    with self.assertRaises(RuntimeError) as raised:
+                        service.commit(
+                            str(started["session_id"]),
+                            enforce_gate=False,
+                            allow_stale_sidecar=True,
+                        )
+            self.assertIn("another history operation is in progress", str(raised.exception))
 
     def test_session_diff_code_details_summary_and_hunk(self) -> None:
         with _workspace_tmpdir() as td:

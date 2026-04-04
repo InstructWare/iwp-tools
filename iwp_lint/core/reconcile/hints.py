@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from ..output import collect_remediation_hints
+from .utils import collect_remediation_hints
 
 
 def build_structured_hints(

@@ -9,6 +9,7 @@ from io import StringIO
 from pathlib import Path
 
 from iwp_build.cli import main
+from iwp_lint.api import session_reconcile
 from iwp_lint.config import load_config
 from iwp_lint.parsers.md_parser import parse_markdown_nodes
 from iwp_lint.vcs.snapshot_store import SnapshotStore
@@ -47,6 +48,71 @@ def _workspace_tmpdir() -> tempfile.TemporaryDirectory[str]:
 
 
 class IwpBuildSessionCliTests(unittest.TestCase):
+    def test_session_reconcile_api_and_cli_are_equivalent(self) -> None:
+        with _workspace_tmpdir() as td:
+            root = Path(td)
+            iwp_root = root / "InstructWare.iw"
+            schema_path = root / "schema.json"
+            config_path = root / ".iwp-lint.yaml"
+            out_dir = root / "out"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            _write(schema_path, json.dumps(_base_schema()))
+            _write(iwp_root / "architecture.md", "# Architecture\n\n## Layout Tree\n- Alpha\n")
+            _write(
+                config_path,
+                "\n".join(
+                    [
+                        "iwp_root: InstructWare.iw",
+                        "code_roots:",
+                        "  - _ir/src",
+                        "tracking:",
+                        "  protocol:",
+                        "    include_ext:",
+                        "      - .ts",
+                        "    exclude_globs: []",
+                        "  snapshot:",
+                        "    include_ext:",
+                        "      - .ts",
+                        "    exclude_globs: []",
+                        "schema:",
+                        "  file: schema.json",
+                    ]
+                )
+                + "\n",
+            )
+            self.assertEqual(main(["session", "start", "--config", str(config_path)]), 0)
+            cli_exit = main(
+                [
+                    "session",
+                    "reconcile",
+                    "--config",
+                    str(config_path),
+                    "--node-severity",
+                    "all",
+                    "--max-diagnostics",
+                    "5",
+                    "--json",
+                    str(out_dir / "session.reconcile.cli.json"),
+                ]
+            )
+            self.assertIn(cli_exit, {0, 1})
+            cli_payload = json.loads(
+                (out_dir / "session.reconcile.cli.json").read_text(encoding="utf-8")
+            )
+            config = load_config(str(config_path))
+            api_exit, api_payload = session_reconcile(
+                config=config,
+                session_id=cli_payload.get("session_id"),
+                node_severity="all",
+                max_diagnostics=5,
+            )
+            self.assertEqual(api_exit, cli_exit)
+            self.assertEqual(api_payload["session_id"], cli_payload["session_id"])
+            self.assertEqual(api_payload["status"], cli_payload["status"])
+            self.assertEqual(api_payload["can_commit"], cli_payload["can_commit"])
+            self.assertEqual(api_payload["blocking_reasons"], cli_payload["blocking_reasons"])
+            self.assertEqual(api_payload["summary"], cli_payload["summary"])
+
     def test_session_reconcile_missing_session_returns_friendly_error(self) -> None:
         with _workspace_tmpdir() as td:
             root = Path(td)

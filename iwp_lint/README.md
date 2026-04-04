@@ -148,11 +148,13 @@ from iwp_lint.api import (
     history_list,
     history_prune,
     history_restore,
+    resolve_session_id,
     run_gate_suite,
     run_quality_gate,
     session_gate,
     session_commit,
     session_diff,
+    session_reconcile,
     session_start,
     verify_compiled,
 )
@@ -163,8 +165,15 @@ verify_compiled(config)
 gate = run_quality_gate(config)
 suite = run_gate_suite(config)
 session = session_start(config)
-intent = session_diff(config, session_id=session["session_id"])
-gate = session_gate(config, session_id=session["session_id"])
+resolved_session_id, _ = resolve_session_id(
+    config,
+    session_id=None,
+    action="reconcile",
+    auto_start_session=True,
+)
+intent = session_diff(config, session_id=resolved_session_id)
+reconcile_exit, reconcile = session_reconcile(config, session_id=resolved_session_id)
+gate = session_gate(config, session_id=resolved_session_id)
 session_commit(config, session_id=session["session_id"], message="agent: align links and tests")
 checkpoint = history_checkpoint(config, message="fast loop savepoint")
 history = history_list(config, limit=20)
@@ -184,7 +193,7 @@ Build 保持只读，不推进 baseline。开发态快照推进可由 `history_c
 
 Snapshot internals are exposed through library API for orchestrators.
 
-Session workflow (non-git, baseline-aware):
+Session workflow (dulwich-backed, baseline-aware):
 
 - `session_start` records baseline checkpoint for a task session
   - exactly one active session is allowed per workspace (`open|dirty|verified|blocked`)
@@ -200,7 +209,14 @@ Session workflow (non-git, baseline-aware):
   - suggested trace targets (`<source_path>::<node_id>`)
   - density warnings for suspiciously high link concentration
 - `session_commit` runs gate suite and atomically advances baseline only on pass
+  - session checkpoints now persist `git_commit_oid` for history restore traceability
   - optional `message` is persisted to checkpoint metadata for history timeline display
+- `resolve_session_id` offers reusable session resolution semantics for library callers
+  - fallback priority: explicit `session_id` > current open session > optional auto-start
+  - returns `(resolved_session_id, auto_started)` for caller-side orchestration/telemetry
+- `session_reconcile` provides high-level decision orchestration in library API
+  - flow: `resolve session -> diff -> (optional normalize) -> gate -> guidance payload`
+  - payload keeps `IWP_RECONCILE_V1` schema fields for CLI/API parity
 - `history_checkpoint` creates a file-level checkpoint and advances baseline without gate checks
   - optional `message` is persisted for fast-loop timeline readability
 - `history_list` returns checkpoint timeline and optional storage stats
@@ -208,7 +224,10 @@ Session workflow (non-git, baseline-aware):
   - default safety: block on dirty workspace
   - default safety: block when an open session exists
   - optional safety checkpoint: `restore_before_apply`
+  - strict mode: `history.safety.strict_dulwich_restore=true` requires `git_commit_oid`
+  - fallback mode: `history.safety.allow_sqlite_fallback` controls SQLite content fallback
 - `history_prune` applies retention policy and keeps protected checkpoints
+  - runs `gc v1` after prune to clean unreachable loose git objects (conservative mode)
 
 ## Node Registry and Catalog
 
@@ -259,6 +278,7 @@ tracking:
       - "**/dist/**"
       - "**/__pycache__/**"
       - "**/.pytest_cache/**"
+    max_file_size_kb: 5120
 cache:
   node_index_db_file: .iwp/cache/node_index.v1.sqlite
 compiled:
@@ -290,6 +310,8 @@ history:
   safety:
     block_restore_on_dirty: true
     auto_checkpoint_before_restore: true
+    strict_dulwich_restore: false
+    allow_sqlite_fallback: true
 
 execution_presets:
   agent-default:
@@ -308,6 +330,7 @@ execution_presets:
 
 `tracking.protocol` applies to lint/diff/normalize/sidecar code discovery.
 `tracking.snapshot` applies to checkpoint/restore/baseline-diff snapshot collection.
+`tracking.snapshot.max_file_size_kb` enforces a hard per-file size guard before content read.
 Default excludes are:
 
 - `**/node_modules/**`

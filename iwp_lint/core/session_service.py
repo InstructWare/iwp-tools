@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 import re
+import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -19,6 +22,7 @@ from ..vcs.snapshot_diff import (
     compute_diff_against_snapshot,
 )
 from ..vcs.snapshot_store import SnapshotFile, SnapshotStore, collect_workspace_files
+from .history_service import DulwichHistoryBackend, SnapshotStoreHistoryBackend
 from .node_catalog import (
     compile_node_context,
     verify_code_sidecar_freshness_context,
@@ -31,6 +35,11 @@ class SessionService:
         self._config = config
         self._db_path = (config.project_root / config.snapshot_db_file).resolve()
         self._store = SnapshotStore(self._db_path)
+        self._lock_path = (config.project_root / config.cache_dir / "history.lock").resolve()
+        if config.history.backend == "dulwich":
+            self._history_backend = DulwichHistoryBackend(config)
+        else:
+            self._history_backend = SnapshotStoreHistoryBackend(config)
 
     def start(
         self,
@@ -111,6 +120,7 @@ class SessionService:
             include_ext=self._config.snapshot_include_ext,
             code_exclude_globs=self._config.snapshot_exclude_globs,
             exclude_markdown_globs=self._config.schema_exclude_markdown_globs,
+            max_file_size_bytes=self._config.snapshot_max_file_size_bytes,
         )
         current = {item.path: item for item in current_files}
         changed_files, changed_lines_by_file = compute_diff_against_snapshot(previous, current)
@@ -508,28 +518,37 @@ class SessionService:
             include_ext=self._config.snapshot_include_ext,
             code_exclude_globs=self._config.snapshot_exclude_globs,
             exclude_markdown_globs=self._config.schema_exclude_markdown_globs,
+            max_file_size_bytes=self._config.snapshot_max_file_size_bytes,
         )
         commit_message = (message or "").strip() or "session commit baseline checkpoint"
-        baseline_after = self._store.create_snapshot(files)
-        checkpoint_id = self._store.create_checkpoint(
-            snapshot_id=baseline_after,
-            source="session_commit",
-            session_id=session_id,
-            baseline_snapshot_id=(
-                cast(int, session["baseline_id_before"])
-                if session.get("baseline_id_before") is not None
-                else None
-            ),
-            gate_status=("pass" if gate_status != "FAIL" else "fail"),
-            message=commit_message,
-            metadata={"status": "committed"},
-        )
-        self._store.update_session(
-            session_id,
-            status="committed",
-            baseline_id_after=baseline_after,
-            committed=True,
-        )
+        with self._history_operation_lock("session_commit"):
+            baseline_after = self._store.create_snapshot(files)
+            git_commit_oid = self._history_backend.create_git_checkpoint(
+                files=files,
+                source="session_commit",
+                actor="session",
+                message=commit_message,
+            )
+            checkpoint_id = self._store.create_checkpoint(
+                snapshot_id=baseline_after,
+                source="session_commit",
+                session_id=session_id,
+                baseline_snapshot_id=(
+                    cast(int, session["baseline_id_before"])
+                    if session.get("baseline_id_before") is not None
+                    else None
+                ),
+                gate_status=("pass" if gate_status != "FAIL" else "fail"),
+                git_commit_oid=git_commit_oid,
+                message=commit_message,
+                metadata={"status": "committed"},
+            )
+            self._store.update_session(
+                session_id,
+                status="committed",
+                baseline_id_after=baseline_after,
+                committed=True,
+            )
         self._store.append_session_event(
             session_id,
             "session_committed",
@@ -537,6 +556,7 @@ class SessionService:
                 "baseline_id_after": baseline_after,
                 "file_count": len(files),
                 "checkpoint_id": checkpoint_id,
+                "git_commit_oid": git_commit_oid or "",
                 "message": commit_message,
             },
         )
@@ -548,6 +568,7 @@ class SessionService:
             "baseline_id_after": baseline_after,
             "checkpoint_id": checkpoint_id,
             "checkpoint_message": commit_message,
+            "git_commit_oid": git_commit_oid,
             "file_count": len(files),
             "sidecar_fresh": sidecar_fresh,
             "compiled_at": sidecar_compiled_at,
@@ -750,6 +771,75 @@ class SessionService:
                 "link_density_signals": intent_diff.get("link_density_signals", []),
             },
         }
+
+    @contextmanager
+    def _history_operation_lock(self, action: str):
+        self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+        started = time.monotonic()
+        timeout_seconds = 2.0
+        wait_interval_seconds = 0.05
+        lock_fd = os.open(
+            self._lock_path.as_posix(),
+            os.O_CREAT | os.O_RDWR,
+            0o600,
+        )
+        lock_id = uuid.uuid4().hex
+        while True:
+            try:
+                self._acquire_file_lock(lock_fd)
+                os.ftruncate(lock_fd, 0)
+                os.write(lock_fd, f"{os.getpid()}:{lock_id}".encode())
+                break
+            except BlockingIOError as exc:
+                if time.monotonic() - started >= timeout_seconds:
+                    raise RuntimeError(
+                        f"history {action} is blocked: another history operation is in progress"
+                    ) from exc
+                time.sleep(wait_interval_seconds)
+        try:
+            yield
+        finally:
+            try:
+                self._release_file_lock(lock_fd)
+            finally:
+                os.close(lock_fd)
+
+    @staticmethod
+    def _acquire_file_lock(lock_fd: int) -> None:
+        if os.name == "nt":
+            import msvcrt
+
+            if os.fstat(lock_fd).st_size == 0:
+                os.write(lock_fd, b"0")
+            os.lseek(lock_fd, 0, os.SEEK_SET)
+            try:
+                msvcrt.locking(lock_fd, msvcrt.LK_NBLCK, 1)
+                return
+            except OSError as exc:
+                raise BlockingIOError("history lock is busy") from exc
+        else:
+            import fcntl
+
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except BlockingIOError as exc:
+                raise BlockingIOError("history lock is busy") from exc
+
+    @staticmethod
+    def _release_file_lock(lock_fd: int) -> None:
+        if os.name == "nt":
+            import msvcrt
+
+            os.lseek(lock_fd, 0, os.SEEK_SET)
+            try:
+                msvcrt.locking(lock_fd, msvcrt.LK_UNLCK, 1)
+            except OSError:
+                return
+            return
+        import fcntl
+
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
 
     @staticmethod
     def _next_step_commands() -> list[str]:

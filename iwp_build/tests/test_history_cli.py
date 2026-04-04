@@ -160,6 +160,8 @@ class IwpBuildHistoryCliTests(unittest.TestCase):
             self.assertEqual(list_exit, 0)
             listed = json.loads((out_dir / "history.list.json").read_text(encoding="utf-8"))
             self.assertGreaterEqual(len(listed["checkpoints"]), 2)
+            self.assertIn("pending_restore_txn", listed)
+            self.assertIsNone(listed["pending_restore_txn"])
             self.assertTrue(
                 any(
                     str(item.get("source", "")) == "history_checkpoint"
@@ -171,9 +173,16 @@ class IwpBuildHistoryCliTests(unittest.TestCase):
                 for item in listed["checkpoints"]
                 if str(item.get("source", "")) == "history_checkpoint"
             ]
+            session_commit_rows = [
+                item
+                for item in listed["checkpoints"]
+                if str(item.get("source", "")) == "session_commit"
+            ]
             self.assertTrue(history_checkpoint_rows)
+            self.assertTrue(session_commit_rows)
             self.assertIsInstance(history_checkpoint_rows[0].get("git_commit_oid"), str)
             self.assertTrue(str(history_checkpoint_rows[0]["git_commit_oid"]))
+            self.assertTrue(str(session_commit_rows[0].get("git_commit_oid", "")).strip())
             self.assertEqual(str(listed["checkpoints"][0]["message"]), "add beta node")
             message_index = {
                 str(item.get("message", "")): int(item["checkpoint_id"])

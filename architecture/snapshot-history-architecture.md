@@ -133,7 +133,7 @@ sequenceDiagram
 - `--force` 语义不变
 - restore 数据源优先级：
   1. `git_commit_oid` 对应 commit tree
-  2. 回退到 SQLite `snapshot_id`
+  2. （可选）回退到 SQLite `snapshot_id`（受 `history.safety.allow_sqlite_fallback` 控制）
 
 ---
 
@@ -150,15 +150,16 @@ sequenceDiagram
 实现方式：
 
 - lock 文件：`${cache_dir}/history.lock`
-- 原子创建：`O_CREAT | O_EXCL`
+- OS 文件锁：`msvcrt.locking`（Windows）/`fcntl.flock`（Unix-like）
 - 超时重试：短轮询 + 固定超时
-- 释放策略：token 校验后删除，避免误删他人锁
+- 释放策略：`finally` 中统一 unlock + close；进程异常退出由 OS 自动回收锁
 
 ## 5.2 写入一致性
 
 - workspace 文件恢复采用原子写（临时文件 + replace）
 - restore 前可自动生成安全 checkpoint（`restore_before_apply`）
 - 历史事件全量落库，便于审计与回溯
+- prune 阶段执行 `gc v1`：仅清理不可达 loose objects（保守模式，不改 refs/pack）
 
 ---
 
@@ -168,6 +169,10 @@ sequenceDiagram
 
 - `history.backend`：`dulwich | snapshot`（默认 `dulwich`）
 - `history.git_dir`：Git 存储目录（默认 `.iwp/cache/history.git`）
+
+`iwp_lint.config.TrackingScopeConfig`（`tracking.snapshot`）新增：
+
+- `tracking.snapshot.max_file_size_kb`：单文件快照大小上限（默认 `5120`）
 
 这使系统可以在同一语义层做后端切换与回退。
 
@@ -214,8 +219,10 @@ sequenceDiagram
 ## 8. 当前语义边界
 
 - `session commit` 仍是 gate 驱动的基线推进语义
+- `session commit` / `history checkpoint` / `restore_before_apply` 都会写 Dulwich commit 并记录 `git_commit_oid`
 - `history checkpoint` 是开发态快照，不触发 gate
 - `history restore` 仍默认受 open session / dirty workspace 保护
+- `history restore` 支持严格模式（`history.safety.strict_dulwich_restore=true`），缺失 `git_commit_oid` 的 checkpoint 默认阻断
 - `workflow.mode` 只做可观测与 warning，不改变 gate pass/fail
 
 ---
@@ -225,4 +232,5 @@ sequenceDiagram
 1. 在 `prune` 阶段增加 Git 对象可达性与清理策略  
 2. 增加异常注入测试（恢复中断、电源中断模拟）  
 3. 将锁策略抽象为通用基础设施，复用于 session 关键写路径  
-4. 增加一次“长链路随机跳转恢复”压力测试作发布前门禁
+4. 增加一次“长链路随机跳转恢复”压力测试作发布前门禁  
+5. 评估 `gc v2`（pack/压缩）以进一步控制对象库碎片

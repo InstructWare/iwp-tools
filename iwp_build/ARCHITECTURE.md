@@ -114,6 +114,7 @@ flowchart TD
 - 开发态快照入口为 `history checkpoint`（无 gate）
 - 常规 baseline 推进入口为 `session commit`（有 gate）
 - `history restore` 可把当前 baseline 指针切换到历史 checkpoint
+- `session commit` / `history checkpoint` / `restore_before_apply` checkpoint 均持久化 `git_commit_oid`
 
 ## 5.2 Verify 交付流程
 
@@ -158,6 +159,7 @@ flowchart LR
 说明：
 
 - `session diff/reconcile/commit` 在未传 `--session-id` 时会优先回退到 current open session
+- `session` 的会话解析与 `reconcile` 编排由 `iwp_lint.api` 下沉提供（CLI 仅参数解析与输出渲染）
 - `session diff` 支持 `summary/hunk` 两级代码差异输出
 - `session start` 支持 `--if-missing` 幂等引导：有活动会话时直接复用
 - `session commit` 支持可选 `--message`，用于写入 checkpoint 历史摘要
@@ -165,6 +167,7 @@ flowchart LR
 - `session reconcile` 支持可选 `normalize-links`，执行顺序为 `diff -> (optional normalize) -> gate`
 - `session reconcile --auto-build-sidecar` 在 sidecar stale 时执行受控刷新（`compile_context + build_code_sidecar`）后继续判定
 - `session normalize-links` 提供 session 语义入口，内部委托链接规范化写入
+- `session commit` 与 `history *` 共用 `history.lock` 写锁，避免并发写竞态
 
 ## 5.4 History 子命令流程
 
@@ -191,7 +194,11 @@ flowchart LR
 - `history restore` 默认脏工作区阻断，`--force` 才允许覆盖
 - `history restore` 默认活动会话阻断，`--force` 才允许覆盖
 - restore 可自动创建 `restore_before_apply` 安全点
+- restore 支持严格 Dulwich 策略：`history.safety.strict_dulwich_restore=true` 时要求 checkpoint 必须有 `git_commit_oid`
 - restore 成功返回下一步建议（`verify` / `session reconcile`）
+- history 锁基于 OS 文件锁（Windows `msvcrt.locking` / Unix `fcntl.flock`）
+- history 采集遵循 `tracking.snapshot.max_file_size_kb` 硬限制
+- `history prune` 返回 `gc` 统计并执行保守 loose-object 清理
 
 ## 5.5 Watch 本地循环流程
 
@@ -257,3 +264,4 @@ uv run python -m unittest iwp_build.tests.test_e2e_suite
 - `history restore --dry-run` 与 apply 结果字段是否一致
 - 脏工作区阻断 / open-session 阻断与 `--force` 放行语义是否符合预期
 - `history prune` 是否保留最新 checkpoint 与最近 `restore_before_apply`
+- `history prune` 的 `gc` 统计是否可观测且不影响后续 restore
